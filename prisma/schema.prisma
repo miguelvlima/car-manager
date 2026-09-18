@@ -1,0 +1,629 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Site {
+  id        String    @id @default(cuid())
+  name      String
+  code      String    @unique
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  users     User[]
+  vehicles  Vehicle[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  roleId       String?
+  role         Role?     @relation(fields: [roleId], references: [id])
+  siteId       String?
+  site         Site?     @relation(fields: [siteId], references: [id])
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  createdVehicles          Vehicle[]                 @relation("VehicleCreatedBy")
+  photographyUpdates       Vehicle[]                 @relation("PhotographyUpdatedBy")
+  sales                    VehicleSale[]
+  reservations             VehicleReservation[]
+  events                   VehicleEvent[]
+  auditLogs                AuditLog[]
+  photos                   VehiclePhoto[]            @relation("PhotoUploadedBy")
+  priceChanges             VehiclePriceHistory[]
+  locationChanges          VehicleLocationHistory[]  @relation("LocationChangedBy")
+  statusChanges            VehicleStatusHistory[]    @relation("StatusChangedBy")
+  settingUpdates           AppSetting[]              @relation("SettingUpdatedBy")
+  importBatches            ImportBatch[]
+  notifications            Notification[]
+  assignedRefurbishments   Refurbishment[]           @relation("RefurbishmentResponsible")
+  assignedCleaning         CleaningProcess[]         @relation("CleaningResponsible")
+  assignedServices         ServiceProcess[]          @relation("ServiceResponsible")
+
+  @@index([roleId])
+  @@index([siteId])
+  @@index([deletedAt])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  description String?
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  resource    String
+  action      String
+  name        String
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  allowed      Boolean    @default(true)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Location {
+  id        String       @id @default(cuid())
+  name      String
+  type      LocationType
+  isActive  Boolean      @default(true)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  vehicles         Vehicle[]                @relation("CurrentLocation")
+  locationHistory  VehicleLocationHistory[]
+}
+
+enum LocationType {
+  STAND
+  EXPOSICAO
+  OFICINA
+  ARMAZEM
+  CLIENTE
+  CEDIDO
+  OUTRO
+}
+
+model VehicleSource {
+  id                   String    @id @default(cuid())
+  name                 String
+  code                 String    @unique
+  hasCommercialSupport Boolean   @default(false)
+  isActive             Boolean   @default(true)
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  vehicles             Vehicle[]
+}
+
+model VehicleStatus {
+  id                   String                    @id @default(cuid())
+  code                 String                    @unique
+  name                 String
+  color                String
+  category             String
+  sortOrder            Int                       @default(0)
+  isActive             Boolean                   @default(true)
+  isAvailableForSale   Boolean                   @default(false)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  vehicles             Vehicle[]
+  fromTransitions      VehicleStatusTransition[] @relation("TransitionFrom")
+  toTransitions        VehicleStatusTransition[] @relation("TransitionTo")
+  statusHistoryFrom    VehicleStatusHistory[]    @relation("StatusFrom")
+  statusHistoryTo      VehicleStatusHistory[]    @relation("StatusTo")
+}
+
+model VehicleStatusTransition {
+  id           String        @id @default(cuid())
+  fromStatusId String
+  toStatusId   String
+  fromStatus   VehicleStatus @relation("TransitionFrom", fields: [fromStatusId], references: [id])
+  toStatus     VehicleStatus @relation("TransitionTo", fields: [toStatusId], references: [id])
+
+  @@unique([fromStatusId, toStatusId])
+}
+
+model VehicleType {
+  id       String    @id @default(cuid())
+  code     String    @unique
+  name     String
+  isActive Boolean   @default(true)
+  vehicles Vehicle[]
+}
+
+model Vehicle {
+  id                      String             @id @default(cuid())
+  internalCode            String             @unique
+  make                    String
+  model                   String
+  version                 String?
+  generation              String?
+  bodyType                String?
+  licensePlate            String?
+  licensePlateNormalized  String?
+  vin                     String?
+  color                   String?
+  year                    Int?
+  firstRegistrationDate   DateTime?
+  fuelType                String?
+  transmission            String?
+  powerHp                 Int?
+  engineSizeCc            Int?
+  doors                   Int?
+  seats                   Int?
+  entryDate               DateTime
+  renewal                 Boolean            @default(false)
+  inspectionDate          DateTime?
+  mileage                 Int?
+  passport                Boolean?
+  numberOfKeys            Int?
+  commercialSupport       Boolean            @default(false)
+  commercialSupportAmount Decimal?           @db.Decimal(12, 2)
+  originNotes             String?
+  originEntity            String?
+  salePrice               Decimal?           @db.Decimal(12, 2)
+  previousPrice           Decimal?           @db.Decimal(12, 2)
+  priceChangedAt          DateTime?
+  acquisitionPrice        Decimal?           @db.Decimal(12, 2)
+  preparationCost         Decimal?           @db.Decimal(12, 2)
+  photographyStatus       PhotographyStatus  @default(NOT_PHOTOGRAPHED)
+  photographyUpdatedAt    DateTime?
+  photographyNotes        String?
+  commercialNotes         String?
+  needsImportReview       Boolean            @default(false)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  deletedAt               DateTime?
+
+  vehicleTypeId          String
+  vehicleType            VehicleType             @relation(fields: [vehicleTypeId], references: [id])
+  sourceId               String?
+  source                 VehicleSource?          @relation(fields: [sourceId], references: [id])
+  statusId               String
+  status                 VehicleStatus           @relation(fields: [statusId], references: [id])
+  locationId             String?
+  location               Location?               @relation("CurrentLocation", fields: [locationId], references: [id])
+  siteId                 String?
+  site                   Site?                   @relation(fields: [siteId], references: [id])
+  createdById            String?
+  createdBy              User?                   @relation("VehicleCreatedBy", fields: [createdById], references: [id])
+  photographyUpdatedById String?
+  photographyUpdatedBy   User?                   @relation("PhotographyUpdatedBy", fields: [photographyUpdatedById], references: [id])
+
+  photos            VehiclePhoto[]
+  documents         VehicleDocument[]
+  events            VehicleEvent[]
+  locationHistory   VehicleLocationHistory[]
+  statusHistory     VehicleStatusHistory[]
+  priceHistory      VehiclePriceHistory[]
+  sales             VehicleSale[]
+  reservations      VehicleReservation[]
+  refurbishments    Refurbishment[]
+  cleaningProcesses CleaningProcess[]
+  serviceProcesses  ServiceProcess[]
+  importRows        ImportRow[]
+  aiIngestions      AiIngestion[]
+
+  @@index([licensePlateNormalized])
+  @@index([vin])
+  @@index([statusId])
+  @@index([locationId])
+  @@index([sourceId])
+  @@index([entryDate])
+  @@index([deletedAt])
+  @@index([make, model])
+  @@index([needsImportReview])
+}
+
+enum PhotographyStatus {
+  NOT_PHOTOGRAPHED
+  PHOTOGRAPHED
+  IN_TREATMENT
+  READY_TO_PUBLISH
+  PUBLISHED
+  UNPUBLISHED
+}
+
+model VehiclePhoto {
+  id             String    @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  storageDriver  String    @default("local")
+  storageKey     String
+  url            String?
+  contentType    String?
+  sizeBytes      Int?
+  isPrimary      Boolean   @default(false)
+  sortOrder      Int       @default(0)
+  caption        String?
+  uploadedById   String?
+  uploadedBy     User?     @relation("PhotoUploadedBy", fields: [uploadedById], references: [id])
+  createdAt      DateTime  @default(now())
+  deletedAt      DateTime?
+
+  @@index([vehicleId, deletedAt])
+}
+
+model VehicleDocument {
+  id            String    @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  title         String
+  kind          String
+  storageDriver String    @default("local")
+  storageKey    String
+  url           String?
+  contentType   String?
+  sizeBytes     Int?
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
+
+  @@index([vehicleId])
+}
+
+model VehicleEvent {
+  id          String           @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle          @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type        VehicleEventType
+  title       String
+  occurredAt  DateTime         @default(now())
+  userId      String?
+  user        User?            @relation(fields: [userId], references: [id])
+  previous    Json?
+  next        Json?
+  notes       String?
+
+  @@index([vehicleId, occurredAt])
+}
+
+enum VehicleEventType {
+  CREATED
+  UPDATED
+  STATUS_CHANGED
+  LOCATION_CHANGED
+  PRICE_CHANGED
+  PHOTO_ADDED
+  PHOTO_PRIMARY_SET
+  PUBLISHING_CHANGED
+  REFURBISHMENT_STARTED
+  REFURBISHMENT_COMPLETED
+  REFURBISHMENT_PICKED_UP
+  CLEANING_STARTED
+  CLEANING_COMPLETED
+  SERVICE_STARTED
+  SERVICE_COMPLETED
+  RESERVED
+  RESERVATION_CANCELLED
+  SALE_REGISTERED
+  SALE_CANCELLED
+  DELIVERED
+  TYPE_CHANGED
+  IMPORT
+  NOTE
+}
+
+model VehicleLocationHistory {
+  id           String    @id @default(cuid())
+  vehicleId    String
+  vehicle      Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  fromLocation String?
+  toLocation   String?
+  locationId   String?
+  location     Location? @relation(fields: [locationId], references: [id])
+  changedById  String?
+  changedBy    User?     @relation("LocationChangedBy", fields: [changedById], references: [id])
+  changedAt    DateTime  @default(now())
+  notes        String?
+
+  @@index([vehicleId, changedAt])
+}
+
+model VehicleStatusHistory {
+  id          String         @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  fromStatusId String?
+  toStatusId   String
+  fromStatus   VehicleStatus? @relation("StatusFrom", fields: [fromStatusId], references: [id])
+  toStatus     VehicleStatus  @relation("StatusTo", fields: [toStatusId], references: [id])
+  changedById  String?
+  changedBy    User?          @relation("StatusChangedBy", fields: [changedById], references: [id])
+  changedAt    DateTime       @default(now())
+  notes        String?
+
+  @@index([vehicleId, changedAt])
+}
+
+model VehiclePriceHistory {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  previousPrice  Decimal? @db.Decimal(12, 2)
+  newPrice       Decimal  @db.Decimal(12, 2)
+  changedById    String?
+  changedBy      User?    @relation(fields: [changedById], references: [id])
+  changedAt      DateTime @default(now())
+  notes          String?
+
+  @@index([vehicleId, changedAt])
+}
+
+model VehicleSale {
+  id                  String    @id @default(cuid())
+  vehicleId           String
+  vehicle             Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  soldAt              DateTime
+  sellerId            String
+  seller              User      @relation(fields: [sellerId], references: [id])
+  finalPrice          Decimal   @db.Decimal(12, 2)
+  customerRef         String?
+  expectedDeliveryAt  DateTime?
+  actualDeliveryAt    DateTime?
+  notes               String?
+  createdAt           DateTime  @default(now())
+  cancelledAt         DateTime?
+  cancelledReason     String?
+
+  @@index([vehicleId])
+  @@index([sellerId])
+  @@index([soldAt])
+}
+
+model VehicleReservation {
+  id           String            @id @default(cuid())
+  vehicleId    String
+  vehicle      Vehicle           @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  reservedById String
+  reservedBy   User              @relation(fields: [reservedById], references: [id])
+  reservedAt   DateTime          @default(now())
+  expiresAt    DateTime?
+  customerRef  String?
+  notes        String?
+  releasedAt   DateTime?
+  cancelReason String?
+  status       ReservationStatus @default(ACTIVE)
+
+  @@index([vehicleId, status])
+}
+
+enum ReservationStatus {
+  ACTIVE
+  EXPIRED
+  CONVERTED
+  CANCELLED
+}
+
+model ProcessSite {
+  id        String          @id @default(cuid())
+  name      String
+  kind      ProcessSiteKind
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  refurbishments    Refurbishment[]
+  cleaningProcesses CleaningProcess[]
+  serviceProcesses  ServiceProcess[]
+}
+
+enum ProcessSiteKind {
+  REFURBISHMENT
+  CLEANING
+  SERVICE
+  GENERAL
+}
+
+model StaffMember {
+  id        String   @id @default(cuid())
+  name      String
+  label     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Refurbishment {
+  id                 String               @id @default(cuid())
+  vehicleId          String
+  vehicle            Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  processSiteId      String?
+  processSite        ProcessSite?         @relation(fields: [processSiteId], references: [id])
+  locationName       String?
+  deliveredAt        DateTime?
+  expectedPickupAt   DateTime?
+  actualPickupAt     DateTime?
+  status             RefurbishmentStatus  @default(TO_START)
+  responsibleUserId  String?
+  responsibleUser    User?                @relation("RefurbishmentResponsible", fields: [responsibleUserId], references: [id])
+  responsibleName    String?
+  notes              String?
+  cost               Decimal?             @db.Decimal(12, 2)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([vehicleId])
+  @@index([status])
+}
+
+enum RefurbishmentStatus {
+  NOT_REQUIRED
+  TO_START
+  DELIVERED
+  IN_PROGRESS
+  COMPLETED
+  PICKED_UP
+  CANCELLED
+}
+
+model CleaningProcess {
+  id                String         @id @default(cuid())
+  vehicleId         String
+  vehicle           Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  processSiteId     String?
+  processSite       ProcessSite?   @relation(fields: [processSiteId], references: [id])
+  locationName      String?
+  status            CleaningStatus @default(PENDING)
+  responsibleUserId String?
+  responsibleUser   User?          @relation("CleaningResponsible", fields: [responsibleUserId], references: [id])
+  responsibleName   String?
+  deliveredAt       DateTime?
+  completedAt       DateTime?
+  notes             String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([vehicleId])
+}
+
+enum CleaningStatus {
+  NOT_REQUIRED
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model ServiceProcess {
+  id                String        @id @default(cuid())
+  vehicleId         String
+  vehicle           Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  needsService      Boolean       @default(true)
+  processSiteId     String?
+  processSite       ProcessSite?  @relation(fields: [processSiteId], references: [id])
+  locationName      String?
+  enteredAt         DateTime?
+  completedAt       DateTime?
+  serviceType       String?
+  mileage           Int?
+  checklist         String?
+  notes             String?
+  responsibleUserId String?
+  responsibleUser   User?         @relation("ServiceResponsible", fields: [responsibleUserId], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([vehicleId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  ip         String?
+  previous   Json?
+  next       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+model AppSetting {
+  key         String   @id
+  value       Json
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("SettingUpdatedBy", fields: [updatedById], references: [id])
+}
+
+model ImportBatch {
+  id          String       @id @default(cuid())
+  fileName    String
+  status      ImportStatus @default(PENDING)
+  createdById String?
+  createdBy   User?        @relation(fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now())
+  completedAt DateTime?
+  notes       String?
+  rows        ImportRow[]
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model ImportRow {
+  id         String          @id @default(cuid())
+  batchId    String
+  batch      ImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber  Int
+  rawData    Json
+  status     ImportRowStatus @default(NEEDS_REVIEW)
+  reviewNotes String?
+  warnings   String[]
+  vehicleId  String?
+  vehicle    Vehicle?        @relation(fields: [vehicleId], references: [id])
+  createdAt  DateTime        @default(now())
+
+  @@index([batchId, status])
+}
+
+enum ImportRowStatus {
+  IMPORTED
+  NEEDS_REVIEW
+  FAILED
+  SKIPPED
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  body       String
+  type       String
+  entityType String?
+  entityId   String?
+  channel    String    @default("IN_APP")
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+model AiIngestion {
+  id               String   @id @default(cuid())
+  vehicleId        String?
+  vehicle          Vehicle? @relation(fields: [vehicleId], references: [id])
+  kind             String
+  storageKey       String?
+  suggestedFields  Json
+  confidence       Json?
+  rawResponse      Json?
+  confirmed        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+}

@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: lima-stock-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: carmanager
+      POSTGRES_PASSWORD: carmanager
+      POSTGRES_DB: carmanager
+    ports:
+      - "5433:5432"
+    volumes:
+      - lima_stock_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carmanager -d carmanager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  lima_stock_pg:
