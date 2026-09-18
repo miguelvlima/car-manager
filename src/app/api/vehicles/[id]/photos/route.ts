@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActor } from "@/server/permissions/check";
 import { can } from "@/server/permissions/check";
 import { prisma } from "@/lib/db";
-import { storeLocalFile } from "@/lib/storage/local";
+import { storeUpload } from "@/lib/storage";
 import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   let stored;
   try {
-    stored = await storeLocalFile(file, `vehicles/${id}`);
+    stored = await storeUpload(file, `vehicles/${id}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível carregar a fotografia.";
     return NextResponse.json({ error: message }, { status: 400 });
