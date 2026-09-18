@@ -101,6 +101,48 @@ export async function bootstrapCatalog() {
     update: {},
     create: { key: "stock.alerts", value: DEFAULT_STOCK_SETTINGS },
   });
+
+  const locations: Array<[string, "STAND" | "EXPOSICAO" | "ARMAZEM" | "OFICINA" | "CLIENTE" | "CEDIDO" | "OUTRO"]> = [
+    ["Stand Feira", "STAND"],
+    ["Stand Ovar", "STAND"],
+    ["EXP. Feira", "EXPOSICAO"],
+    ["EXP. Ovar", "EXPOSICAO"],
+    ["Armazém Feira", "ARMAZEM"],
+    ["Espinho", "OFICINA"],
+    ["Ovar", "STAND"],
+    ["Feira", "STAND"],
+    ["Cedido", "CEDIDO"],
+    ["Cortesia", "OUTRO"],
+    ["Entregue", "CLIENTE"],
+  ];
+  for (const [index, [name, type]] of locations.entries()) {
+    const existing = await prisma.location.findFirst({ where: { name } });
+    if (existing) continue;
+    await prisma.location.create({ data: { name, type, sortOrder: index } });
+  }
+
+  const sources: Array<[string, string, boolean]> = [
+    ["RETOMA", "Retoma", true],
+    ["TCAP", "TCAP", true],
+    ["SERVICO", "Serviço", false],
+    ["COMPRA", "Compra", false],
+    ["KINTO", "Kinto", true],
+    ["COMPRA_TCAP", "Compra/TCAP", true],
+  ];
+  for (const [code, name, hasCommercialSupport] of sources) {
+    await prisma.vehicleSource.upsert({
+      where: { code },
+      update: {},
+      create: { code, name, hasCommercialSupport },
+    });
+  }
+
+  const processSites = ["Espinho", "Feira", "Aveiro", "Pedro", "Fernando", "Melisauto"];
+  for (const name of processSites) {
+    const existing = await prisma.processSite.findFirst({ where: { name, kind: "REFURBISHMENT" } });
+    if (existing) continue;
+    await prisma.processSite.create({ data: { name, kind: "REFURBISHMENT" } });
+  }
 }
 
 export async function bootstrapAdminFromEnv() {
@@ -136,11 +178,14 @@ async function main() {
   await bootstrapAdminFromEnv();
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+const isDirectRun = process.argv[1]?.includes("bootstrap");
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
