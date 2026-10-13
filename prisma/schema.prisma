@@ -381,6 +381,7 @@ model VehicleSale {
   expectedDeliveryAt  DateTime?
   actualDeliveryAt    DateTime?
   notes               String?
+  deliveryNotes       String?
   createdAt           DateTime  @default(now())
   cancelledAt         DateTime?
   cancelledReason     String?

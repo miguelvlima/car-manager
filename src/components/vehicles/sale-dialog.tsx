@@ -129,6 +129,7 @@ export function DeliverDialog({ vehicleId }: { vehicleId: string }) {
     const result = await markDeliveredAction({
       vehicleId,
       actualDeliveryAt: String(formData.get("actualDeliveryAt") ?? ""),
+      notes: String(formData.get("notes") ?? ""),
     });
     setPending(false);
     if (!result.ok) {
@@ -156,6 +157,10 @@ export function DeliverDialog({ vehicleId }: { vehicleId: string }) {
             <div>
               <Label>Data de entrega</Label>
               <Input name="actualDeliveryAt" type="date" defaultValue={toDateInput(new Date())} required />
+            </div>
+            <div>
+              <Label>Observação</Label>
+              <Textarea name="notes" />
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>

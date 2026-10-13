@@ -105,6 +105,8 @@ export function mapVehicle(vehicle: VehicleWithRelations, actor: Actor, settings
           customerRef: activeSale.customerRef,
           expectedDeliveryAt: activeSale.expectedDeliveryAt,
           actualDeliveryAt: activeSale.actualDeliveryAt,
+          notes: activeSale.notes,
+          deliveryNotes: activeSale.deliveryNotes,
           seller: activeSale.seller,
         }
       : null,

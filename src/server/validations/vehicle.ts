@@ -98,6 +98,7 @@ export const saleSchema = z.object({
 export const deliverySchema = z.object({
   vehicleId: z.string().min(1),
   actualDeliveryAt: z.string().min(1, "Data de entrega obrigatória."),
+  notes: optionalText,
 });
 
 export const commercialRevertSchema = z.object({

@@ -79,7 +79,7 @@ export async function registerSale(
   return mapVehicle(fresh, actor, await getStockSettings());
 }
 
-export async function markDelivered(actor: Actor, input: { vehicleId: string; actualDeliveryAt: string }) {
+export async function markDelivered(actor: Actor, input: { vehicleId: string; actualDeliveryAt: string; notes?: string | null }) {
   if (!can(actor, "vehicle:mark_delivered")) {
     throw new AppError("Não tem permissão para marcar a entrega.", "FORBIDDEN", 403);
   }
@@ -97,9 +97,11 @@ export async function markDelivered(actor: Actor, input: { vehicleId: string; ac
   const deliveredAt = new Date(input.actualDeliveryAt);
   if (Number.isNaN(deliveredAt.getTime())) throw new AppError("Data de entrega inválida.", "VALIDATION");
 
+  const notes = input.notes?.trim() || null;
+
   await prisma.vehicleSale.update({
     where: { id: sale.id },
-    data: { actualDeliveryAt: deliveredAt },
+    data: { actualDeliveryAt: deliveredAt, deliveryNotes: notes },
   });
 
   await writeVehicleEvent({
@@ -108,13 +110,14 @@ export async function markDelivered(actor: Actor, input: { vehicleId: string; ac
     title: `Entregue em ${deliveredAt.toISOString().slice(0, 10)}`,
     actor,
     next: { actualDeliveryAt: deliveredAt.toISOString() },
+    notes,
   });
   await writeAudit({
     actor,
     action: "MARK_DELIVERED",
     entityType: "Vehicle",
     entityId: vehicle.id,
-    next: { saleId: sale.id, actualDeliveryAt: deliveredAt.toISOString() },
+    next: { saleId: sale.id, actualDeliveryAt: deliveredAt.toISOString(), notes },
   });
 }
 

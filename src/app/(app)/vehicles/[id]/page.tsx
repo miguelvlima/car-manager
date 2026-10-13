@@ -222,6 +222,8 @@ export default async function VehicleDetailPage({
           <p>Data da venda: {formatDateTime(vehicle.activeSale.soldAt)}</p>
           <p>Preço final: {formatMoney(vehicle.activeSale.finalPrice)}</p>
           <p>Data de entrega: {formatDate(vehicle.activeSale.actualDeliveryAt)}</p>
+          {vehicle.activeSale.notes ? <p>Observação da venda: {vehicle.activeSale.notes}</p> : null}
+          {vehicle.activeSale.deliveryNotes ? <p>Observação da entrega: {vehicle.activeSale.deliveryNotes}</p> : null}
         </section>
       ) : null}
     </div>
