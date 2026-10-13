@@ -25,15 +25,6 @@ export default async function SourcesSettingsPage({
           { type: "search", name: "q", placeholder: "Nome ou código" },
           {
             type: "select",
-            name: "support",
-            emptyLabel: "Apoio comercial",
-            options: [
-              { value: "true", label: "Com apoio" },
-              { value: "false", label: "Sem apoio" },
-            ],
-          },
-          {
-            type: "select",
             name: "isActive",
             emptyLabel: "Ativo / inativo",
             options: [
@@ -49,7 +40,6 @@ export default async function SourcesSettingsPage({
             <tr>
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Código</th>
-              <th className="px-4 py-3">Apoio</th>
               <th className="px-4 py-3">Viaturas</th>
               <th className="px-4 py-3">Estado</th>
               <th className="px-4 py-3 text-right">Ações</th>
@@ -64,7 +54,6 @@ export default async function SourcesSettingsPage({
                   </Link>
                 </td>
                 <td className="px-4 py-3">{item.code}</td>
-                <td className="px-4 py-3">{item.hasCommercialSupport ? "Sim" : "Não"}</td>
                 <td className="px-4 py-3">{item._count.vehicles}</td>
                 <td className="px-4 py-3">
                   <Badge tone={item.isActive ? "green" : "slate"}>{item.isActive ? "Ativo" : "Inativo"}</Badge>

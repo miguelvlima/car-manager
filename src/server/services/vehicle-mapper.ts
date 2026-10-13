@@ -1,4 +1,4 @@
-import type { Location, Vehicle, VehiclePhoto, VehicleSale, VehicleSource, VehicleStatus, VehicleType, User } from "@prisma/client";
+import type { Location, Vehicle, VehiclePhoto, VehicleSale, VehicleSource, VehicleStatus, User } from "@prisma/client";
 import { formatPlate, maskPlate } from "@/lib/plate";
 import { calculateDaysInStock, stockAgeLevel, type StockAlertSettings } from "@/lib/stock";
 import { toNumber } from "@/lib/utils";
@@ -8,7 +8,6 @@ type VehicleWithRelations = Vehicle & {
   status: VehicleStatus;
   location: Location | null;
   source: VehicleSource | null;
-  vehicleType: VehicleType;
   photos: VehiclePhoto[];
   sales?: (VehicleSale & { seller: Pick<User, "id" | "name"> })[];
 };
@@ -23,10 +22,7 @@ export function mapVehicle(vehicle: VehicleWithRelations, actor: Actor, settings
   const daysInStock = calculateDaysInStock(vehicle.entryDate, vehicle.renewal, settings.renewalOffsetDays, now);
   const ageLevel = stockAgeLevel(daysInStock, settings);
   const canSeePlate = can(actor, "vehicle:view_license_plate");
-  const canSeeAcquisition = can(actor, "vehicle:view_acquisition_price");
   const salePrice = toNumber(vehicle.salePrice);
-  const acquisitionPrice = toNumber(vehicle.acquisitionPrice);
-  const preparationCost = toNumber(vehicle.preparationCost);
   const activeSale = vehicle.sales?.find((sale) => !sale.cancelledAt) ?? null;
   const primaryPhoto = vehicle.photos.find((photo) => photo.isPrimary && !photo.deletedAt) ?? vehicle.photos.find((photo) => !photo.deletedAt);
 
@@ -90,20 +86,15 @@ export function mapVehicle(vehicle: VehicleWithRelations, actor: Actor, settings
     salePrice,
     previousPrice: toNumber(vehicle.previousPrice),
     priceChangedAt: vehicle.priceChangedAt,
-    acquisitionPrice: canSeeAcquisition ? acquisitionPrice : null,
-    preparationCost: canSeeAcquisition ? preparationCost : null,
-    estimatedMargin:
-      canSeeAcquisition && salePrice != null && acquisitionPrice != null
-        ? salePrice - acquisitionPrice - (preparationCost ?? 0)
-        : null,
     photographyStatus: vehicle.photographyStatus,
     photographyNotes: vehicle.photographyNotes,
     commercialNotes: vehicle.commercialNotes,
+    inspectionReportUrl: vehicle.inspectionReportUrl,
+    transportGuideUrl: vehicle.transportGuideUrl,
     needsImportReview: vehicle.needsImportReview,
     status: vehicle.status,
     location: vehicle.location,
     source: vehicle.source,
-    vehicleType: vehicle.vehicleType,
     primaryPhotoUrl: primaryPhoto?.url ?? null,
     photos: vehicle.photos.filter((photo) => !photo.deletedAt),
     activeSale: activeSale

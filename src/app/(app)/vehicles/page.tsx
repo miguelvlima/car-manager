@@ -4,6 +4,16 @@ import { Button } from "@/components/ui/button";
 import { can, requirePermission } from "@/server/permissions/check";
 import { getLookups, listVehicles } from "@/server/services/vehicle.service";
 
+function queryHref(query: Record<string, string | undefined>, page: number) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value && key !== "page") params.set(key, value);
+  }
+  if (page > 1) params.set("page", String(page));
+  const text = params.toString();
+  return text ? `/vehicles?${text}` : "/vehicles";
+}
+
 export default async function VehiclesPage({
   searchParams,
 }: {
@@ -26,7 +36,7 @@ export default async function VehiclesPage({
     getLookups(),
   ]);
 
-  const title = available ? "Disponíveis para venda" : inStock ? "Stock" : "Viaturas";
+  const title = available || inStock ? "Stock" : "Viaturas";
 
   return (
     <div className="space-y-6">
@@ -42,16 +52,23 @@ export default async function VehiclesPage({
           </Button>
         ) : null}
       </div>
-      <VehicleFilters statuses={lookups.statuses} locations={lookups.locations} sources={lookups.sources} query={query} />
-      <VehicleTable vehicles={items} canEdit={can(actor, "vehicle:edit")} canDelete={can(actor, "vehicle:delete")} />
+      <VehicleFilters
+        statuses={lookups.statuses}
+        locations={lookups.locations}
+        sources={lookups.sources}
+        makes={lookups.makes}
+        models={lookups.models}
+        versions={lookups.versions}
+      />
+      <VehicleTable vehicles={items} query={query} canEdit={can(actor, "vehicle:edit")} canDelete={can(actor, "vehicle:delete")} />
       <div className="flex justify-end gap-2">
         {page > 1 ? (
-          <Link href={`/vehicles?page=${page - 1}`} className="rounded-lg border px-3 py-2 text-sm">
+          <Link href={queryHref(query, page - 1)} className="rounded-lg border px-3 py-2 text-sm">
             Anterior
           </Link>
         ) : null}
         {page * pageSize < total ? (
-          <Link href={`/vehicles?page=${page + 1}`} className="rounded-lg border px-3 py-2 text-sm">
+          <Link href={queryHref(query, page + 1)} className="rounded-lg border px-3 py-2 text-sm">
             Seguinte
           </Link>
         ) : null}

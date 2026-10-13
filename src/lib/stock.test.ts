@@ -58,7 +58,6 @@ describe("sanitizeVehiclePatch", () => {
         sourceId: "src_1",
         entryDate: "2026-01-01",
         mileage: 10,
-        acquisitionPrice: 10000,
         salePrice: 20000,
         commercialNotes: "ok",
       },
@@ -68,7 +67,6 @@ describe("sanitizeVehiclePatch", () => {
     expect(result.sourceId).toBeUndefined();
     expect(result.entryDate).toBeUndefined();
     expect(result.mileage).toBeUndefined();
-    expect(result.acquisitionPrice).toBeUndefined();
     expect(result.salePrice).toBeUndefined();
     expect(result.commercialNotes).toBe("ok");
   });

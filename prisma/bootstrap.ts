@@ -8,16 +8,8 @@ const prisma = new PrismaClient();
 const DEFAULT_ROLES = [
   { code: "SUPER_ADMIN", name: "Super Admin", description: "Acesso absoluto" },
   { code: "ADMIN", name: "Gestor de stock", description: "Operação completa do stock" },
-  { code: "SALES", name: "Vendedor", description: "Consulta comercial e vendas" },
+  { code: "SALES", name: "Vendedor", description: "Vê viaturas até à entrega e marca vendas" },
   { code: "VIEWER", name: "Consulta", description: "Apenas leitura" },
-] as const;
-
-const DEFAULT_TYPES = [
-  ["USADA", "Usada"],
-  ["SERVICO", "Serviço"],
-  ["DEMONSTRACAO", "Demonstração"],
-  ["CORTESIA", "Cortesia"],
-  ["OUTRA", "Outra"],
 ] as const;
 
 const DEFAULT_STATUSES = [
@@ -78,14 +70,6 @@ export async function bootstrapCatalog() {
         create: { roleId: role.id, permissionId: permission.id, allowed: true },
       });
     }
-  }
-
-  for (const [code, name] of DEFAULT_TYPES) {
-    await prisma.vehicleType.upsert({
-      where: { code },
-      update: {},
-      create: { code, name },
-    });
   }
 
   for (const [index, [code, name, color, category, isAvailableForSale]] of DEFAULT_STATUSES.entries()) {

@@ -151,14 +151,6 @@ model VehicleStatusTransition {
   @@unique([fromStatusId, toStatusId])
 }
 
-model VehicleType {
-  id       String    @id @default(cuid())
-  code     String    @unique
-  name     String
-  isActive Boolean   @default(true)
-  vehicles Vehicle[]
-}
-
 model Vehicle {
   id                      String             @id @default(cuid())
   internalCode            String             @unique
@@ -198,13 +190,13 @@ model Vehicle {
   photographyUpdatedAt    DateTime?
   photographyNotes        String?
   commercialNotes         String?
+  inspectionReportUrl     String?
+  transportGuideUrl       String?
   needsImportReview       Boolean            @default(false)
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt
   deletedAt               DateTime?
 
-  vehicleTypeId          String
-  vehicleType            VehicleType             @relation(fields: [vehicleTypeId], references: [id])
   sourceId               String?
   source                 VehicleSource?          @relation(fields: [sourceId], references: [id])
   statusId               String

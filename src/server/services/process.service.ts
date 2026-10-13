@@ -4,7 +4,7 @@ import { AppError } from "@/lib/errors";
 import { can, type Actor } from "@/server/permissions/check";
 import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 
-const BLOCKED_STATUS = new Set(["RESERVADO", "VENDIDO", "AGUARDA_ENTREGA", "ENTREGUE", "CEDIDO", "DEVOLVIDO"]);
+const BLOCKED_STATUS = new Set(["ENTREGUE", "CEDIDO", "DEVOLVIDO"]);
 const ACTIVE_REFURB = new Set(["TO_START", "DELIVERED", "IN_PROGRESS"]);
 const ACTIVE_CLEAN = new Set(["PENDING", "IN_PROGRESS"]);
 
@@ -21,6 +21,7 @@ export type PreparationInput = {
   locationName?: string;
   notes?: string;
   expectedPickupAt?: string;
+  occurredAt?: string;
   mileage?: number;
 };
 
@@ -93,8 +94,8 @@ async function startRefurbishment(actor: Actor, vehicle: VehicleRow, input: Prep
       processSiteId: site?.id,
       locationName: site?.name ?? empty(input.locationName),
       status: "IN_PROGRESS",
-      deliveredAt: new Date(),
-      expectedPickupAt: parseDate(input.expectedPickupAt),
+      deliveredAt: parseDate(input.occurredAt) ?? new Date(),
+      expectedPickupAt: null,
       notes: empty(input.notes),
       responsibleUserId: actor.id,
       responsibleName: actor.name,
@@ -116,7 +117,11 @@ async function completeRefurbishment(actor: Actor, vehicle: VehicleRow, input: P
   if (!active) throw new AppError("Não há recondicionamento em curso.", "VALIDATION");
   await prisma.refurbishment.update({
     where: { id: active.id },
-    data: { status: "PICKED_UP", actualPickupAt: new Date(), notes: empty(input.notes) ?? active.notes },
+    data: {
+      status: "PICKED_UP",
+      actualPickupAt: parseDate(input.occurredAt) ?? new Date(),
+      notes: empty(input.notes) ?? active.notes,
+    },
   });
   await applyStatus(actor, vehicle, "EM_PREPARACAO");
   await logProcess(actor, vehicle.id, "REFURBISHMENT_PICKED_UP", "Voltou do recondicionamento", {
@@ -136,7 +141,7 @@ async function startCleaning(actor: Actor, vehicle: VehicleRow, input: Preparati
       processSiteId: site?.id,
       locationName: site?.name ?? empty(input.locationName),
       status: "IN_PROGRESS",
-      deliveredAt: new Date(),
+      deliveredAt: parseDate(input.occurredAt) ?? new Date(),
       notes: empty(input.notes),
       responsibleUserId: actor.id,
       responsibleName: actor.name,
@@ -156,7 +161,11 @@ async function completeCleaning(actor: Actor, vehicle: VehicleRow, input: Prepar
   if (!active) throw new AppError("Não há higienização em curso.", "VALIDATION");
   await prisma.cleaningProcess.update({
     where: { id: active.id },
-    data: { status: "COMPLETED", completedAt: new Date(), notes: empty(input.notes) ?? active.notes },
+    data: {
+      status: "COMPLETED",
+      completedAt: parseDate(input.occurredAt) ?? new Date(),
+      notes: empty(input.notes) ?? active.notes,
+    },
   });
   await applyStatus(actor, vehicle, "EM_PREPARACAO");
   await logProcess(actor, vehicle.id, "CLEANING_COMPLETED", "Higienização concluída", { notes: input.notes ?? null });
@@ -174,7 +183,7 @@ async function startService(actor: Actor, vehicle: VehicleRow, input: Preparatio
       needsService: true,
       processSiteId: site?.id,
       locationName: site?.name ?? empty(input.locationName),
-      enteredAt: new Date(),
+      enteredAt: parseDate(input.occurredAt) ?? new Date(),
       mileage: input.mileage ?? vehicle.mileage,
       notes: empty(input.notes),
       responsibleUserId: actor.id,
@@ -196,18 +205,12 @@ async function completeService(actor: Actor, vehicle: VehicleRow, input: Prepara
   await prisma.serviceProcess.update({
     where: { id: active.id },
     data: {
-      completedAt: new Date(),
+      completedAt: parseDate(input.occurredAt) ?? new Date(),
       notes: empty(input.notes) ?? active.notes,
       mileage: input.mileage ?? active.mileage,
     },
   });
-  const nextStatus =
-    vehicle.photographyStatus === "PUBLISHED"
-      ? "DISPONIVEL_PARA_VENDA"
-      : vehicle.photographyStatus === "NOT_PHOTOGRAPHED"
-        ? "PRONTO_PARA_FOTOGRAFAR"
-        : "AGUARDA_PUBLICACAO";
-  await applyStatus(actor, vehicle, nextStatus);
+  await applyStatus(actor, vehicle, "EM_PREPARACAO");
   await logProcess(actor, vehicle.id, "SERVICE_COMPLETED", "Revisão concluída", { notes: input.notes ?? null });
 }
 

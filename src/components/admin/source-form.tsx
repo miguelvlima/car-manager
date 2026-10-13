@@ -10,7 +10,7 @@ import { upsertSourceAction } from "@/server/actions";
 export function SourceForm({
   source,
 }: {
-  source?: { id: string; name: string; code: string; hasCommercialSupport: boolean; notes: string | null; isActive: boolean };
+  source?: { id: string; name: string; code: string; notes: string | null; isActive: boolean };
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -38,13 +38,6 @@ export function SourceForm({
         <div>
           <Label>Código</Label>
           <Input name="code" defaultValue={source?.code} required />
-        </div>
-        <div>
-          <Label>Apoio comercial</Label>
-          <Select name="hasCommercialSupport" defaultValue={source?.hasCommercialSupport ? "true" : "false"}>
-            <option value="false">Não</option>
-            <option value="true">Sim</option>
-          </Select>
         </div>
         <div>
           <Label>Ativo</Label>

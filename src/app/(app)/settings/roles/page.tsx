@@ -11,7 +11,8 @@ export default async function RolesSettingsPage() {
         <h2 className="text-2xl font-semibold">Perfis e permissões</h2>
         <p className="text-sm text-muted-foreground">
           Crie, edite e elimine perfis. O Super Admin tem de existir sempre e o utilizador associado não pode ser
-          eliminado. Todas as alterações ficam no histórico.
+          eliminado. Vendedores vêem todas as viaturas até haver data de entrega e só podem marcar como vendida; a
+          entrega fica no admin. Já não existe reserva nem stock comercial. Todas as alterações ficam no histórico.
         </p>
       </div>
       <RoleMatrix

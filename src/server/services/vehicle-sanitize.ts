@@ -23,7 +23,6 @@ export type VehicleWritableFields = {
   mileage?: number | null;
   passport?: boolean | null;
   numberOfKeys?: number | null;
-  vehicleTypeId?: string;
   sourceId?: string | null;
   statusId?: string;
   locationId?: string | null;
@@ -37,6 +36,8 @@ export type VehicleWritableFields = {
   photographyStatus?: string;
   photographyNotes?: string | null;
   commercialNotes?: string | null;
+  inspectionReportUrl?: string | null;
+  transportGuideUrl?: string | null;
 };
 
 const OPERATIONAL_FIELDS = [
@@ -69,10 +70,8 @@ export function sanitizeVehiclePatch(
     delete next.salePrice;
   }
 
-  if (!can("vehicle:view_acquisition_price")) {
-    delete next.acquisitionPrice;
-    delete next.preparationCost;
-  }
+  delete next.acquisitionPrice;
+  delete next.preparationCost;
 
   if (!can("vehicle:change_status")) {
     delete next.statusId;

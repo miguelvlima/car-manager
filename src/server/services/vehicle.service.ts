@@ -7,12 +7,12 @@ import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 import { getStockSettings } from "@/server/services/settings.service";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
 import { sanitizeVehiclePatch, type VehicleWritableFields } from "@/server/services/vehicle-sanitize";
+import { isSalesRole, type VehicleListSort } from "@/lib/vehicle-status";
 
 const vehicleInclude = {
   status: true,
   location: true,
   source: true,
-  vehicleType: true,
   photos: { where: { deletedAt: null }, orderBy: [{ isPrimary: "desc" as const }, { sortOrder: "asc" as const }] },
   sales: {
     where: { cancelledAt: null },
@@ -25,6 +25,7 @@ export type VehicleListQuery = {
   q?: string;
   make?: string;
   model?: string;
+  version?: string;
   statusId?: string;
   locationId?: string;
   sourceId?: string;
@@ -40,7 +41,7 @@ export type VehicleListQuery = {
   availableOnly?: boolean;
   inStock?: boolean;
   catalog?: boolean;
-  sort?: "newest" | "oldest" | "days_desc" | "days_asc" | "price_asc" | "price_desc" | "km_asc" | "km_desc";
+  sort?: VehicleListSort;
   page?: number;
   pageSize?: number;
 };
@@ -78,13 +79,15 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
   const page = Math.max(1, query.page ?? 1);
   const pageSize = Math.min(60, Math.max(1, query.pageSize ?? 24));
   const plate = normalizePlate(query.q);
+  const sourceId = query.sourceId?.trim() || undefined;
   const where: Prisma.VehicleWhereInput = {
     deletedAt: null,
-    ...(query.make ? { make: { contains: query.make, mode: "insensitive" } } : {}),
-    ...(query.model ? { model: { contains: query.model, mode: "insensitive" } } : {}),
+    ...(query.make ? { make: { equals: query.make, mode: "insensitive" } } : {}),
+    ...(query.model ? { model: { equals: query.model, mode: "insensitive" } } : {}),
+    ...(query.version ? { version: { equals: query.version, mode: "insensitive" } } : {}),
     ...(query.statusId ? { statusId: query.statusId } : {}),
     ...(query.locationId ? { locationId: query.locationId } : {}),
-    ...(query.sourceId ? { sourceId: query.sourceId } : {}),
+    ...(sourceId ? { sourceId } : {}),
     ...(query.photographyStatus ? { photographyStatus: query.photographyStatus } : {}),
     ...(query.year ? { year: query.year } : {}),
     ...(query.minPrice != null || query.maxPrice != null
@@ -95,9 +98,8 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
       : {}),
     ...(query.availableOnly || query.catalog || query.inStock
       ? {
-          status: {
-            ...(query.availableOnly || query.catalog ? { isAvailableForSale: true } : {}),
-            ...(query.inStock ? { code: { notIn: ["ENTREGUE", "DEVOLVIDO"] } } : {}),
+          NOT: {
+            sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } },
           },
         }
       : {}),
@@ -110,10 +112,17 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
             { make: { contains: query.q, mode: "insensitive" } },
             { model: { contains: query.q, mode: "insensitive" } },
             { version: { contains: query.q, mode: "insensitive" } },
-            { vin: { contains: query.q, mode: "insensitive" } },
             { internalCode: { contains: query.q, mode: "insensitive" } },
+            { source: { name: { contains: query.q, mode: "insensitive" } } },
             ...(plate ? [{ licensePlateNormalized: { contains: plate } }] : []),
           ],
+        }
+      : {}),
+    ...(isSalesRole(actor.roleCode)
+      ? {
+          NOT: {
+            sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } },
+          },
         }
       : {}),
   };
@@ -143,6 +152,26 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
         return (a.mileage ?? Number.POSITIVE_INFINITY) - (b.mileage ?? Number.POSITIVE_INFINITY);
       case "km_desc":
         return (b.mileage ?? -1) - (a.mileage ?? -1);
+      case "make_asc":
+        return `${a.make} ${a.model} ${a.version ?? ""}`.localeCompare(`${b.make} ${b.model} ${b.version ?? ""}`, "pt");
+      case "make_desc":
+        return `${b.make} ${b.model} ${b.version ?? ""}`.localeCompare(`${a.make} ${a.model} ${a.version ?? ""}`, "pt");
+      case "plate_asc":
+        return (a.licensePlateDisplay ?? "").localeCompare(b.licensePlateDisplay ?? "", "pt");
+      case "plate_desc":
+        return (b.licensePlateDisplay ?? "").localeCompare(a.licensePlateDisplay ?? "", "pt");
+      case "location_asc":
+        return (a.location?.name ?? "").localeCompare(b.location?.name ?? "", "pt");
+      case "location_desc":
+        return (b.location?.name ?? "").localeCompare(a.location?.name ?? "", "pt");
+      case "status_asc":
+        return a.status.name.localeCompare(b.status.name, "pt");
+      case "status_desc":
+        return b.status.name.localeCompare(a.status.name, "pt");
+      case "entry_asc":
+        return a.entryDate.getTime() - b.entryDate.getTime();
+      case "entry_desc":
+        return b.entryDate.getTime() - a.entryDate.getTime();
       default:
         return b.createdAt.getTime() - a.createdAt.getTime();
     }
@@ -170,6 +199,10 @@ export async function getVehicleById(actor: Actor, id: string) {
     },
   });
   if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
+  const delivered = vehicle.sales.some((sale) => !sale.cancelledAt && sale.actualDeliveryAt);
+  if (isSalesRole(actor.roleCode) && delivered) {
+    throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
+  }
   return {
     vehicle: mapVehicle(vehicle, actor, settings),
     events: vehicle.events,
@@ -185,8 +218,9 @@ export async function createVehicle(actor: Actor, input: VehicleWritableFields) 
   }
   const sanitized = sanitizeVehiclePatch(input, actor.roleCode, actor.permissions);
   const plate = normalizePlate(sanitized.licensePlate ?? null);
-  const statusId = sanitized.statusId;
-  if (!statusId || !sanitized.vehicleTypeId || !sanitized.make || !sanitized.model || !sanitized.entryDate) {
+  const entering = await prisma.vehicleStatus.findUnique({ where: { code: "A_ENTRAR" } });
+  const statusId = entering?.id;
+  if (!statusId || !sanitized.make || !sanitized.model || !sanitized.entryDate) {
     throw new AppError("Dados obrigatórios em falta.", "VALIDATION");
   }
 
@@ -216,7 +250,6 @@ export async function createVehicle(actor: Actor, input: VehicleWritableFields) 
       mileage: sanitized.mileage ?? null,
       passport: sanitized.passport ?? null,
       numberOfKeys: sanitized.numberOfKeys ?? null,
-      vehicleTypeId: sanitized.vehicleTypeId,
       sourceId: emptyToNull(sanitized.sourceId),
       statusId,
       locationId: emptyToNull(sanitized.locationId),
@@ -229,6 +262,8 @@ export async function createVehicle(actor: Actor, input: VehicleWritableFields) 
       preparationCost: toDecimal(sanitized.preparationCost),
       photographyStatus: (sanitized.photographyStatus as PhotographyStatus | undefined) ?? "NOT_PHOTOGRAPHED",
       commercialNotes: emptyToNull(sanitized.commercialNotes),
+      inspectionReportUrl: emptyToNull(sanitized.inspectionReportUrl),
+      transportGuideUrl: emptyToNull(sanitized.transportGuideUrl),
       createdById: actor.id,
     },
     include: vehicleInclude,
@@ -307,7 +342,6 @@ export async function updateVehicle(actor: Actor, id: string, input: VehicleWrit
   assign("mileage", () => (data.mileage = sanitized.mileage ?? null));
   assign("passport", () => (data.passport = sanitized.passport ?? null));
   assign("numberOfKeys", () => (data.numberOfKeys = sanitized.numberOfKeys ?? null));
-  assign("vehicleTypeId", () => (data.vehicleType = { connect: { id: sanitized.vehicleTypeId! } }));
   assign("sourceId", () => {
     data.source = sanitized.sourceId ? { connect: { id: sanitized.sourceId } } : { disconnect: true };
   });
@@ -322,8 +356,8 @@ export async function updateVehicle(actor: Actor, id: string, input: VehicleWrit
   });
   assign("photographyNotes", () => (data.photographyNotes = emptyToNull(sanitized.photographyNotes)));
   assign("commercialNotes", () => (data.commercialNotes = emptyToNull(sanitized.commercialNotes)));
-  assign("acquisitionPrice", () => (data.acquisitionPrice = toDecimal(sanitized.acquisitionPrice)));
-  assign("preparationCost", () => (data.preparationCost = toDecimal(sanitized.preparationCost)));
+  assign("inspectionReportUrl", () => (data.inspectionReportUrl = emptyToNull(sanitized.inspectionReportUrl)));
+  assign("transportGuideUrl", () => (data.transportGuideUrl = emptyToNull(sanitized.transportGuideUrl)));
 
   if (sanitized.salePrice !== undefined && sanitized.salePrice !== Number(existing.salePrice ?? NaN)) {
     data.previousPrice = existing.salePrice;
@@ -557,16 +591,31 @@ export async function searchGlobal(actor: Actor, q: string) {
 }
 
 export async function getLookups() {
-  const [statuses, locations, sources, types, users] = await Promise.all([
+  const [statuses, locations, sources, users, makes, models, versions] = await Promise.all([
     prisma.vehicleStatus.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } }),
     prisma.location.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } }),
-    prisma.vehicleSource.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    prisma.vehicleType.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    prisma.vehicleSource.findMany({ orderBy: { name: "asc" } }),
     prisma.user.findMany({
       where: { deletedAt: null, isActive: true },
       select: { id: true, name: true, role: { select: { code: true } } },
       orderBy: { name: "asc" },
     }),
+    prisma.vehicle.findMany({ where: { deletedAt: null }, distinct: ["make"], select: { make: true }, orderBy: { make: "asc" } }),
+    prisma.vehicle.findMany({ where: { deletedAt: null, model: { not: "" } }, distinct: ["model"], select: { model: true }, orderBy: { model: "asc" } }),
+    prisma.vehicle.findMany({
+      where: { deletedAt: null, version: { not: null } },
+      distinct: ["version"],
+      select: { version: true },
+      orderBy: { version: "asc" },
+    }),
   ]);
-  return { statuses, locations, sources, types, users };
+  return {
+    statuses,
+    locations,
+    sources: sources.filter((item) => item.isActive),
+    users,
+    makes: makes.map((item) => item.make).filter(Boolean),
+    models: models.map((item) => item.model).filter(Boolean),
+    versions: versions.map((item) => item.version).filter((item): item is string => Boolean(item)),
+  };
 }

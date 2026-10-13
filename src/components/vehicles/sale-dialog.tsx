@@ -5,13 +5,9 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
-import {
-  cancelReservationAction,
-  cancelSaleAction,
-  registerSaleAction,
-  reserveVehicleAction,
-} from "@/server/actions";
+import { toDateInput } from "@/lib/format";
 import { formatMoney } from "@/lib/format";
+import { cancelSaleAction, markDeliveredAction, registerSaleAction } from "@/server/actions";
 
 export function SaleDialog({
   vehicleId,
@@ -27,13 +23,7 @@ export function SaleDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const [draft, setDraft] = useState<{
-    soldAt: string;
-    finalPrice: string;
-    customerRef: string;
-    expectedDeliveryAt: string;
-    notes: string;
-  } | null>(null);
+  const [draft, setDraft] = useState<{ soldAt: string; finalPrice: string; notes: string } | null>(null);
 
   function close() {
     setOpen(false);
@@ -47,8 +37,6 @@ export function SaleDialog({
       setDraft({
         soldAt: String(formData.get("soldAt") ?? ""),
         finalPrice: String(formData.get("finalPrice") ?? ""),
-        customerRef: String(formData.get("customerRef") ?? ""),
-        expectedDeliveryAt: String(formData.get("expectedDeliveryAt") ?? ""),
         notes: String(formData.get("notes") ?? ""),
       });
       return;
@@ -75,20 +63,14 @@ export function SaleDialog({
               <>
                 <h3 className="text-xl font-semibold">Confirmar venda?</h3>
                 <p className="text-sm text-muted-foreground">
-                  A viatura deixa de estar disponível para venda. Confirme para evitar um registo por engano. Esta ação
-                  fica no histórico.
+                  A viatura fica marcada como vendida. Confirme para evitar um registo por engano. Esta ação fica no
+                  histórico.
                 </p>
                 <dl className="space-y-2 rounded-2xl bg-muted/50 p-4 text-sm">
                   <div className="flex justify-between gap-4">
                     <dt className="text-muted-foreground">Preço final</dt>
                     <dd className="font-medium">{formatMoney(Number(draft.finalPrice) || null)}</dd>
                   </div>
-                  {draft.customerRef ? (
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-muted-foreground">Cliente</dt>
-                      <dd className="font-medium">{draft.customerRef}</dd>
-                    </div>
-                  ) : null}
                 </dl>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setDraft(null)} disabled={pending}>
@@ -99,7 +81,7 @@ export function SaleDialog({
               </>
             ) : (
               <>
-                <h3 className="text-xl font-semibold">Registar venda</h3>
+                <h3 className="text-xl font-semibold">Marcar como vendida</h3>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label>Data da venda</Label>
@@ -111,17 +93,9 @@ export function SaleDialog({
                       <Input defaultValue={sellerName} disabled />
                     </div>
                   ) : null}
-                  <div>
+                  <div className="sm:col-span-2">
                     <Label>Preço final</Label>
                     <Input name="finalPrice" type="number" step="0.01" defaultValue={price ?? ""} required />
-                  </div>
-                  <div>
-                    <Label>Cliente / referência</Label>
-                    <Input name="customerRef" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <Label>Data prevista de entrega</Label>
-                    <Input name="expectedDeliveryAt" type="date" />
                   </div>
                   <div className="sm:col-span-2">
                     <Label>Observação</Label>
@@ -143,20 +117,25 @@ export function SaleDialog({
   );
 }
 
-export function ReserveButton({ vehicleId }: { vehicleId: string }) {
+export function DeliverDialog({ vehicleId }: { vehicleId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
 
-  async function confirm() {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setPending(true);
-    const result = await reserveVehicleAction({ vehicleId });
+    const formData = new FormData(event.currentTarget);
+    const result = await markDeliveredAction({
+      vehicleId,
+      actualDeliveryAt: String(formData.get("actualDeliveryAt") ?? ""),
+    });
     setPending(false);
     if (!result.ok) {
       toast.error(result.error);
       return;
     }
-    toast.success("Viatura reservada. A ação ficou no histórico.");
+    toast.success("Entrega registada. A viatura sai da lista dos vendedores.");
     setOpen(false);
     router.refresh();
   }
@@ -164,55 +143,49 @@ export function ReserveButton({ vehicleId }: { vehicleId: string }) {
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        Reservar
+        Marcar como entregue
       </Button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div role="dialog" aria-modal="true" className="w-full max-w-md space-y-4 rounded-3xl bg-card p-6">
-            <h3 className="text-xl font-semibold">Reservar esta viatura?</h3>
+          <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-3xl bg-card p-6">
+            <h3 className="text-xl font-semibold">Marcar como entregue</h3>
             <p className="text-sm text-muted-foreground">
-              Deixa de aparecer como disponível para venda. Confirme para evitar um registo por engano. Esta ação fica no
-              histórico.
+              Depois de gravar a data de entrega, a viatura deixa de aparecer na listagem dos vendedores. O histórico
+              mantém-se para o admin.
             </p>
+            <div>
+              <Label>Data de entrega</Label>
+              <Input name="actualDeliveryAt" type="date" defaultValue={toDateInput(new Date())} required />
+            </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={confirm} disabled={pending}>
-                {pending ? "A reservar..." : "Confirmar reserva"}
-              </Button>
+              <Button disabled={pending}>{pending ? "A gravar..." : "Confirmar entrega"}</Button>
             </div>
-          </div>
+          </form>
         </div>
       ) : null}
     </>
   );
 }
 
-export function RevertAvailabilityButton({
-  vehicleId,
-  kind,
-}: {
-  vehicleId: string;
-  kind: "reservation" | "sale";
-}) {
+export function RevertAvailabilityButton({ vehicleId }: { vehicleId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const isSale = kind === "sale";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     const formData = new FormData(event.currentTarget);
-    const payload = { vehicleId, reason: String(formData.get("reason") ?? "") };
-    const result = isSale ? await cancelSaleAction(payload) : await cancelReservationAction(payload);
+    const result = await cancelSaleAction({ vehicleId, reason: String(formData.get("reason") ?? "") });
     setPending(false);
     if (!result.ok) {
       toast.error(result.error);
       return;
     }
-    toast.success(isSale ? "Venda anulada. A viatura voltou a estar disponível." : "Reserva anulada. A viatura voltou a estar disponível.");
+    toast.success("Venda anulada.");
     setOpen(false);
     router.refresh();
   }
@@ -220,26 +193,25 @@ export function RevertAvailabilityButton({
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        {isSale ? "Anular venda" : "Anular reserva"}
+        Anular venda
       </Button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
           <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-3xl bg-card p-6">
-            <h3 className="text-xl font-semibold">{isSale ? "Anular venda?" : "Anular reserva?"}</h3>
+            <h3 className="text-xl font-semibold">Anular venda?</h3>
             <p className="text-sm text-muted-foreground">
-              A viatura volta a ficar disponível para venda. Tem de indicar o motivo; a anulação fica registada no
-              histórico da ficha e na auditoria.
+              Tem de indicar o motivo; a anulação fica registada no histórico da ficha e na auditoria.
             </p>
             <div>
-              <Label htmlFor={`reason-${kind}`}>Justificação</Label>
-              <Textarea id={`reason-${kind}`} name="reason" required minLength={8} placeholder="Explique o engano ou o motivo da anulação" />
+              <Label htmlFor="reason-sale">Justificação</Label>
+              <Textarea id="reason-sale" name="reason" required minLength={8} placeholder="Explique o engano ou o motivo da anulação" />
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
                 Cancelar
               </Button>
               <Button type="submit" disabled={pending}>
-                {pending ? "A anular..." : isSale ? "Confirmar anulação da venda" : "Confirmar anulação da reserva"}
+                {pending ? "A anular..." : "Confirmar anulação da venda"}
               </Button>
             </div>
           </form>

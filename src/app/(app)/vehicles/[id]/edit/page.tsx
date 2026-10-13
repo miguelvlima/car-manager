@@ -44,7 +44,6 @@ export default async function EditVehiclePage({
         lookups={lookups}
         canEditOperational={can(actor, "vehicle:edit_operational")}
         canChangePrice={can(actor, "vehicle:change_price")}
-        canSeeAcquisition={can(actor, "vehicle:view_acquisition_price")}
       />
     </div>
   );

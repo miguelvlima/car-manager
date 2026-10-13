@@ -7,10 +7,10 @@ import { requirePermission } from "@/server/permissions/check";
 import {
   commercialRevertSchema,
   createRoleSchema,
+  deliverySchema,
   locationSchema,
   preparationActionSchema,
   processSiteSchema,
-  reservationSchema,
   roleMatrixSchema,
   saleSchema,
   settingsSchema,
@@ -18,12 +18,11 @@ import {
   statusSchema,
   userSchema,
   vehicleCreateSchema,
-  vehicleTypeSchema,
   vehicleUpdateSchema,
 } from "@/server/validations/vehicle";
 import { loginSchema } from "@/server/validations/auth";
 import { createVehicle, deletePhoto, deleteVehicle, setPrimaryPhoto, updateVehicle } from "@/server/services/vehicle.service";
-import { cancelReservation, cancelSale, registerSale, reserveVehicle } from "@/server/services/sale.service";
+import { cancelSale, markDelivered, registerSale } from "@/server/services/sale.service";
 import {
   deleteLocation,
   deleteProcessSite,
@@ -31,7 +30,6 @@ import {
   deleteSource,
   deleteStatus,
   deleteUser,
-  deleteVehicleType,
   saveRolePermissions,
   createRole,
   upsertLocation,
@@ -39,7 +37,6 @@ import {
   upsertSource,
   upsertStatus,
   upsertUser,
-  upsertVehicleType,
 } from "@/server/services/admin.service";
 import { saveStockSettings } from "@/server/services/settings.service";
 import { runPreparation } from "@/server/services/process.service";
@@ -160,22 +157,11 @@ export async function registerSaleAction(input: unknown) {
   }
 }
 
-export async function reserveVehicleAction(input: unknown) {
+export async function markDeliveredAction(input: unknown) {
   try {
-    const actor = await requirePermission("vehicle:reserve");
-    const data = reservationSchema.parse(input);
-    await reserveVehicle(actor, data);
-    return { ok: true as const, data: true };
-  } catch (error) {
-    return toActionResult(error);
-  }
-}
-
-export async function cancelReservationAction(input: unknown) {
-  try {
-    const actor = await requirePermission("vehicle:reserve");
-    const data = commercialRevertSchema.parse(input);
-    await cancelReservation(actor, data);
+    const actor = await requirePermission("vehicle:mark_delivered");
+    const data = deliverySchema.parse(input);
+    await markDelivered(actor, data);
     return { ok: true as const, data: true };
   } catch (error) {
     return toActionResult(error);
@@ -270,17 +256,6 @@ export async function upsertStatusAction(input: unknown) {
   }
 }
 
-export async function upsertVehicleTypeAction(input: unknown) {
-  try {
-    const actor = await requirePermission("settings:manage");
-    const data = vehicleTypeSchema.parse(input);
-    const type = await upsertVehicleType(actor, data);
-    return { ok: true as const, data: { id: type.id } };
-  } catch (error) {
-    return toActionResult(error);
-  }
-}
-
 export async function upsertProcessSiteAction(input: unknown) {
   try {
     const actor = await requirePermission("settings:manage");
@@ -336,16 +311,6 @@ export async function deleteStatusAction(id: string) {
   try {
     const actor = await requirePermission("settings:manage");
     await deleteStatus(actor, id);
-    return { ok: true as const, data: true };
-  } catch (error) {
-    return toActionResult(error);
-  }
-}
-
-export async function deleteVehicleTypeAction(id: string) {
-  try {
-    const actor = await requirePermission("settings:manage");
-    await deleteVehicleType(actor, id);
     return { ok: true as const, data: true };
   } catch (error) {
     return toActionResult(error);

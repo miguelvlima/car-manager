@@ -48,7 +48,6 @@ export default async function StatusesSettingsPage({
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Código</th>
               <th className="px-4 py-3">Categoria</th>
-              <th className="px-4 py-3">Venda</th>
               <th className="px-4 py-3">Viaturas</th>
               <th className="px-4 py-3">Estado</th>
               <th className="px-4 py-3 text-right">Ações</th>
@@ -66,7 +65,6 @@ export default async function StatusesSettingsPage({
                 <td className="px-4 py-3">
                   {STATUS_CATEGORY_LABELS[item.category as keyof typeof STATUS_CATEGORY_LABELS] ?? item.category}
                 </td>
-                <td className="px-4 py-3">{item.isAvailableForSale ? "Sim" : "Não"}</td>
                 <td className="px-4 py-3">{item._count.vehicles}</td>
                 <td className="px-4 py-3">
                   <Badge tone={item.color}>{item.isActive ? "Ativo" : "Inativo"}</Badge>

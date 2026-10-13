@@ -6,7 +6,7 @@ import { formatMoney } from "@/lib/format";
 
 export default async function DashboardPage() {
   const actor = await requirePermission("vehicle:view");
-  if (!can(actor, "report:view")) redirect("/catalog");
+  if (!can(actor, "report:view")) redirect("/vehicles");
 
   const period = monthBounds();
   const [metrics, sales] = await Promise.all([
@@ -28,15 +28,7 @@ export default async function DashboardPage() {
         >
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Stock</p>
           <p className="mt-2 text-4xl font-semibold">{metrics.totalStock}</p>
-          <p className="mt-2 text-sm text-muted-foreground">Viaturas ainda connosco. Abrir lista.</p>
-        </Link>
-        <Link
-          href="/vehicles?available=1"
-          className="rounded-3xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-muted/40"
-        >
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Disponíveis para venda</p>
-          <p className="mt-2 text-4xl font-semibold">{metrics.available}</p>
-          <p className="mt-2 text-sm text-muted-foreground">Prontas a comercializar. Abrir lista.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Viaturas ainda não entregues. Abrir lista.</p>
         </Link>
       </div>
 

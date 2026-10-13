@@ -14,12 +14,11 @@ export function monthBounds(yearMonth?: string) {
 export async function getDashboardMetrics() {
   const vehicles = await prisma.vehicle.findMany({
     where: { deletedAt: null },
-    include: { status: true },
+    include: { sales: { where: { cancelledAt: null }, select: { actualDeliveryAt: true } } },
   });
-  const active = vehicles.filter((vehicle) => !["ENTREGUE", "DEVOLVIDO"].includes(vehicle.status.code));
+  const active = vehicles.filter((vehicle) => !vehicle.sales.some((sale) => sale.actualDeliveryAt));
   return {
     totalStock: active.length,
-    available: vehicles.filter((vehicle) => vehicle.status.isAvailableForSale).length,
   };
 }
 

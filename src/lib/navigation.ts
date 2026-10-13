@@ -1,11 +1,11 @@
 import { hasPermission } from "@/server/permissions/catalog";
 
 export function homePath(actor: { roleCode: string; permissions: Iterable<string> }) {
-  return hasPermission(actor.roleCode, actor.permissions, "report:view") ? "/dashboard" : "/catalog";
+  return hasPermission(actor.roleCode, actor.permissions, "report:view") ? "/dashboard" : "/vehicles";
 }
 
 export function isIndexPath(pathname: string) {
-  if (pathname === "/dashboard" || pathname === "/catalog" || pathname === "/vehicles" || pathname === "/sales") return true;
+  if (pathname === "/dashboard" || pathname === "/vehicles" || pathname === "/sales") return true;
   if (/^\/settings\/[^/]+$/.test(pathname)) return true;
   return false;
 }
@@ -50,7 +50,6 @@ export function isValidStoredReturn(stored: string, pathname: string) {
   }
   return (
     stored.startsWith("/vehicles") ||
-    stored.startsWith("/catalog") ||
     stored.startsWith("/dashboard") ||
     stored.startsWith("/sales")
   );

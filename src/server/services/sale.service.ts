@@ -5,12 +5,6 @@ import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 import { getStockSettings } from "@/server/services/settings.service";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
 
-async function getStatusByCode(code: string) {
-  const status = await prisma.vehicleStatus.findUnique({ where: { code } });
-  if (!status) throw new AppError(`Estado ${code} não configurado.`, "VALIDATION");
-  return status;
-}
-
 export async function registerSale(
   actor: Actor,
   input: {
@@ -18,8 +12,6 @@ export async function registerSale(
     soldAt: string;
     sellerId?: string;
     finalPrice: number;
-    customerRef?: string | null;
-    expectedDeliveryAt?: string | null;
     notes?: string | null;
   },
 ) {
@@ -30,12 +22,12 @@ export async function registerSale(
   const sellerId = can(actor, "vehicle:change_seller") && input.sellerId ? input.sellerId : actor.id;
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
-    include: { status: true, photos: true, vehicleType: true, location: true, source: true, sales: { include: { seller: { select: { id: true, name: true } } } } },
+    include: { status: true, photos: true, location: true, source: true, sales: { include: { seller: { select: { id: true, name: true } } } } },
   });
   if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
-
-  const nextCode = input.expectedDeliveryAt ? "AGUARDA_ENTREGA" : "VENDIDO";
-  const nextStatus = await getStatusByCode(nextCode);
+  if (vehicle.sales.some((sale) => !sale.cancelledAt)) {
+    throw new AppError("Esta viatura já está marcada como vendida.", "CONFLICT");
+  }
 
   const sale = await prisma.$transaction(async (tx) => {
     const created = await tx.vehicleSale.create({
@@ -44,8 +36,6 @@ export async function registerSale(
         soldAt: new Date(input.soldAt),
         sellerId,
         finalPrice: input.finalPrice,
-        customerRef: input.customerRef || null,
-        expectedDeliveryAt: input.expectedDeliveryAt ? new Date(input.expectedDeliveryAt) : null,
         notes: input.notes || null,
       },
       include: { seller: { select: { id: true, name: true } } },
@@ -53,24 +43,7 @@ export async function registerSale(
 
     await tx.vehicle.update({
       where: { id: vehicle.id },
-      data: {
-        statusId: nextStatus.id,
-        salePrice: input.finalPrice,
-      },
-    });
-
-    await tx.vehicleReservation.updateMany({
-      where: { vehicleId: vehicle.id, status: "ACTIVE" },
-      data: { status: "CONVERTED", releasedAt: new Date() },
-    });
-
-    await tx.vehicleStatusHistory.create({
-      data: {
-        vehicleId: vehicle.id,
-        fromStatusId: vehicle.statusId,
-        toStatusId: nextStatus.id,
-        changedById: actor.id,
-      },
+      data: { salePrice: input.finalPrice },
     });
 
     return created;
@@ -81,7 +54,7 @@ export async function registerSale(
     type: "SALE_REGISTERED",
     title: `Vendida — ${sale.seller.name}`,
     actor,
-    next: { finalPrice: input.finalPrice, sellerId, customerRef: input.customerRef },
+    next: { finalPrice: input.finalPrice, sellerId },
     notes: input.notes,
   });
   await writeAudit({
@@ -89,8 +62,8 @@ export async function registerSale(
     action: "REGISTER_SALE",
     entityType: "Vehicle",
     entityId: vehicle.id,
-    previous: { status: vehicle.status.code },
-    next: { status: nextCode, sellerId, finalPrice: input.finalPrice },
+    previous: { salePrice: vehicle.salePrice ? Number(vehicle.salePrice) : null },
+    next: { sellerId, finalPrice: input.finalPrice },
   });
 
   const fresh = await prisma.vehicle.findFirstOrThrow({
@@ -99,7 +72,6 @@ export async function registerSale(
       status: true,
       location: true,
       source: true,
-      vehicleType: true,
       photos: { where: { deletedAt: null } },
       sales: { where: { cancelledAt: null }, include: { seller: { select: { id: true, name: true } } } },
     },
@@ -107,110 +79,42 @@ export async function registerSale(
   return mapVehicle(fresh, actor, await getStockSettings());
 }
 
-export async function reserveVehicle(
-  actor: Actor,
-  input: { vehicleId: string; customerRef?: string | null; notes?: string | null },
-) {
-  if (!can(actor, "vehicle:reserve")) {
-    throw new AppError("Não tem permissão para reservar viaturas.", "FORBIDDEN", 403);
+export async function markDelivered(actor: Actor, input: { vehicleId: string; actualDeliveryAt: string }) {
+  if (!can(actor, "vehicle:mark_delivered")) {
+    throw new AppError("Não tem permissão para marcar a entrega.", "FORBIDDEN", 403);
   }
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
-    include: { status: true },
+    include: {
+      sales: { where: { cancelledAt: null }, orderBy: { soldAt: "desc" }, take: 1, include: { seller: { select: { id: true, name: true } } } },
+    },
   });
   if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
-  const reserved = await getStatusByCode("RESERVADO");
+  const sale = vehicle.sales[0];
+  if (!sale) throw new AppError("Marque a viatura como vendida antes de a dar como entregue.", "CONFLICT");
+  if (sale.actualDeliveryAt) throw new AppError("Esta viatura já tem data de entrega.", "CONFLICT");
 
-  await prisma.$transaction(async (tx) => {
-    await tx.vehicleReservation.create({
-      data: {
-        vehicleId: vehicle.id,
-        reservedById: actor.id,
-        customerRef: input.customerRef || null,
-        notes: input.notes || null,
-      },
-    });
-    await tx.vehicle.update({ where: { id: vehicle.id }, data: { statusId: reserved.id } });
-    await tx.vehicleStatusHistory.create({
-      data: {
-        vehicleId: vehicle.id,
-        fromStatusId: vehicle.statusId,
-        toStatusId: reserved.id,
-        changedById: actor.id,
-      },
-    });
+  const deliveredAt = new Date(input.actualDeliveryAt);
+  if (Number.isNaN(deliveredAt.getTime())) throw new AppError("Data de entrega inválida.", "VALIDATION");
+
+  await prisma.vehicleSale.update({
+    where: { id: sale.id },
+    data: { actualDeliveryAt: deliveredAt },
   });
 
   await writeVehicleEvent({
     vehicleId: vehicle.id,
-    type: "RESERVED",
-    title: `Reservada por ${actor.name}`,
+    type: "DELIVERED",
+    title: `Entregue em ${deliveredAt.toISOString().slice(0, 10)}`,
     actor,
-    notes: input.notes,
+    next: { actualDeliveryAt: deliveredAt.toISOString() },
   });
   await writeAudit({
     actor,
-    action: "RESERVE_VEHICLE",
+    action: "MARK_DELIVERED",
     entityType: "Vehicle",
     entityId: vehicle.id,
-    previous: { status: vehicle.status.code },
-    next: { status: "RESERVADO", customerRef: input.customerRef || null, notes: input.notes || null },
-  });
-}
-
-const SOLD_STATUSES = new Set(["VENDIDO", "AGUARDA_ENTREGA"]);
-
-export async function cancelReservation(actor: Actor, input: { vehicleId: string; reason: string }) {
-  if (!can(actor, "vehicle:reserve")) {
-    throw new AppError("Não tem permissão para anular reservas.", "FORBIDDEN", 403);
-  }
-  const vehicle = await prisma.vehicle.findFirst({
-    where: { id: input.vehicleId, deletedAt: null },
-    include: { status: true, reservations: { where: { status: "ACTIVE" }, orderBy: { reservedAt: "desc" }, take: 1 } },
-  });
-  if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
-  if (vehicle.status.code !== "RESERVADO" && !vehicle.reservations.length) {
-    throw new AppError("Esta viatura não tem uma reserva ativa.", "CONFLICT");
-  }
-
-  const available = await getStatusByCode("DISPONIVEL_PARA_VENDA");
-  const reservation = vehicle.reservations[0];
-
-  await prisma.$transaction(async (tx) => {
-    if (reservation) {
-      await tx.vehicleReservation.update({
-        where: { id: reservation.id },
-        data: { status: "CANCELLED", releasedAt: new Date() },
-      });
-    }
-    await tx.vehicle.update({ where: { id: vehicle.id }, data: { statusId: available.id } });
-    await tx.vehicleStatusHistory.create({
-      data: {
-        vehicleId: vehicle.id,
-        fromStatusId: vehicle.statusId,
-        toStatusId: available.id,
-        changedById: actor.id,
-        notes: input.reason,
-      },
-    });
-  });
-
-  await writeVehicleEvent({
-    vehicleId: vehicle.id,
-    type: "RESERVATION_CANCELLED",
-    title: `Reserva anulada por ${actor.name}`,
-    actor,
-    previous: { status: vehicle.status.code, reservationId: reservation?.id ?? null },
-    next: { status: "DISPONIVEL_PARA_VENDA", reason: input.reason },
-    notes: input.reason,
-  });
-  await writeAudit({
-    actor,
-    action: "CANCEL_RESERVATION",
-    entityType: "Vehicle",
-    entityId: vehicle.id,
-    previous: { status: vehicle.status.code, reservationId: reservation?.id ?? null },
-    next: { status: "DISPONIVEL_PARA_VENDA", reason: input.reason },
+    next: { saleId: sale.id, actualDeliveryAt: deliveredAt.toISOString() },
   });
 }
 
@@ -228,30 +132,13 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
   if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
   const sale = vehicle.sales[0];
   if (!sale) throw new AppError("Esta viatura não tem uma venda ativa.", "CONFLICT");
-  if (sale.actualDeliveryAt || vehicle.status.code === "ENTREGUE") {
+  if (sale.actualDeliveryAt) {
     throw new AppError("Não é possível anular uma venda já entregue.", "CONFLICT");
   }
-  if (!SOLD_STATUSES.has(vehicle.status.code)) {
-    throw new AppError("Só é possível anular vendas em estado vendido ou a aguardar entrega.", "CONFLICT");
-  }
 
-  const available = await getStatusByCode("DISPONIVEL_PARA_VENDA");
-
-  await prisma.$transaction(async (tx) => {
-    await tx.vehicleSale.update({
-      where: { id: sale.id },
-      data: { cancelledAt: new Date() },
-    });
-    await tx.vehicle.update({ where: { id: vehicle.id }, data: { statusId: available.id } });
-    await tx.vehicleStatusHistory.create({
-      data: {
-        vehicleId: vehicle.id,
-        fromStatusId: vehicle.statusId,
-        toStatusId: available.id,
-        changedById: actor.id,
-        notes: input.reason,
-      },
-    });
+  await prisma.vehicleSale.update({
+    where: { id: sale.id },
+    data: { cancelledAt: new Date() },
   });
 
   await writeVehicleEvent({
@@ -265,7 +152,7 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
       sellerId: sale.sellerId,
       finalPrice: Number(sale.finalPrice),
     },
-    next: { status: "DISPONIVEL_PARA_VENDA", reason: input.reason },
+    next: { reason: input.reason },
     notes: input.reason,
   });
   await writeAudit({
@@ -274,6 +161,6 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
     entityType: "Vehicle",
     entityId: vehicle.id,
     previous: { status: vehicle.status.code, saleId: sale.id, sellerId: sale.sellerId, finalPrice: Number(sale.finalPrice) },
-    next: { status: "DISPONIVEL_PARA_VENDA", reason: input.reason },
+    next: { reason: input.reason },
   });
 }

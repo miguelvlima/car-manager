@@ -70,13 +70,6 @@ export function StatusForm({
           </Select>
         </div>
         <div>
-          <Label>Disponível para venda</Label>
-          <Select name="isAvailableForSale" defaultValue={status?.isAvailableForSale ? "true" : "false"}>
-            <option value="false">Não</option>
-            <option value="true">Sim</option>
-          </Select>
-        </div>
-        <div>
           <Label>Ordem</Label>
           <Input name="sortOrder" type="number" defaultValue={status?.sortOrder ?? 0} />
         </div>

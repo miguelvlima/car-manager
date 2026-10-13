@@ -378,17 +378,17 @@ export async function upsertStatus(
     sortOrder?: number;
   },
 ) {
+  const previous = input.id ? await prisma.vehicleStatus.findUnique({ where: { id: input.id } }) : null;
+  if (input.id && !previous) throw new AppError("Estado não encontrado.", "NOT_FOUND", 404);
   const data = {
     name: input.name,
     code: slugifyCode(input.code || input.name),
     color: input.color,
     category: input.category,
-    isAvailableForSale: input.isAvailableForSale ?? false,
+    isAvailableForSale: input.isAvailableForSale ?? previous?.isAvailableForSale ?? false,
     isActive: input.isActive ?? true,
     sortOrder: input.sortOrder ?? 0,
   };
-  const previous = input.id ? await prisma.vehicleStatus.findUnique({ where: { id: input.id } }) : null;
-  if (input.id && !previous) throw new AppError("Estado não encontrado.", "NOT_FOUND", 404);
   const status = input.id
     ? await prisma.vehicleStatus.update({
         where: { id: input.id },
@@ -421,50 +421,6 @@ export async function upsertStatus(
     next: data,
   });
   return status;
-}
-
-export async function listVehicleTypes(query: CatalogListQuery) {
-  const isActive = activeFilter(query.isActive);
-  const items = await prisma.vehicleType.findMany({
-    where: {
-      ...(query.q ? { name: { contains: query.q, mode: "insensitive" } } : {}),
-      ...(isActive === undefined ? {} : { isActive }),
-    },
-    orderBy: { name: "asc" },
-    include: { _count: { select: { vehicles: true } } },
-  });
-  return { items, total: items.length };
-}
-
-export async function getVehicleType(id: string) {
-  const type = await prisma.vehicleType.findUnique({ where: { id } });
-  if (!type) throw new AppError("Tipo não encontrado.", "NOT_FOUND", 404);
-  return type;
-}
-
-export async function upsertVehicleType(
-  actor: Actor,
-  input: { id?: string; name: string; code?: string; isActive?: boolean },
-) {
-  const data = {
-    name: input.name,
-    code: slugifyCode(input.code || input.name),
-    isActive: input.isActive ?? true,
-  };
-  const previous = input.id ? await prisma.vehicleType.findUnique({ where: { id: input.id } }) : null;
-  if (input.id && !previous) throw new AppError("Tipo não encontrado.", "NOT_FOUND", 404);
-  const type = input.id
-    ? await prisma.vehicleType.update({ where: { id: input.id }, data: { name: data.name, isActive: data.isActive } })
-    : await prisma.vehicleType.create({ data });
-  await writeAudit({
-    actor,
-    action: input.id ? "UPDATE_VEHICLE_TYPE" : "CREATE_VEHICLE_TYPE",
-    entityType: "VehicleType",
-    entityId: type.id,
-    previous: previous ? { name: previous.name, code: previous.code, isActive: previous.isActive } : null,
-    next: data,
-  });
-  return type;
 }
 
 export async function listProcessSites(query: CatalogListQuery) {
@@ -639,20 +595,6 @@ export async function deleteStatus(actor: Actor, id: string) {
     entityType: "VehicleStatus",
     entityId: id,
     previous: { name: status.name, code: status.code, category: status.category, isActive: status.isActive },
-  });
-}
-
-export async function deleteVehicleType(actor: Actor, id: string) {
-  const type = await getVehicleType(id);
-  const vehicleCount = await prisma.vehicle.count({ where: { vehicleTypeId: id } });
-  refuseIfInUse(type.name, vehicleCount, vehicleCount === 1 ? "viatura deste tipo" : "viaturas deste tipo");
-  await prisma.vehicleType.delete({ where: { id } });
-  await writeAudit({
-    actor,
-    action: "DELETE_VEHICLE_TYPE",
-    entityType: "VehicleType",
-    entityId: id,
-    previous: { name: type.name, code: type.code, isActive: type.isActive },
   });
 }
 

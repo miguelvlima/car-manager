@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Car, CircleDollarSign, LayoutDashboard, LayoutGrid, LogOut, Menu, Settings, X } from "lucide-react";
+import { ArrowLeft, Car, CircleDollarSign, LayoutDashboard, LogOut, Menu, Settings, X } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { logoutAction } from "@/server/actions";
 import { hasPermission } from "@/server/permissions/catalog";
@@ -28,7 +28,6 @@ export type ShellActor = {
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "report:view" as const },
-  { href: "/catalog", label: "Stock comercial", icon: LayoutGrid, permission: "vehicle:view" as const },
   { href: "/vehicles", label: "Viaturas", icon: Car, permission: "vehicle:view" as const },
   { href: "/sales", label: "Vendas", icon: CircleDollarSign, permission: "report:view" as const },
   { href: "/settings", label: "Configurações", icon: Settings, permission: "settings:manage" as const },

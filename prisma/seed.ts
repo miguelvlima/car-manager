@@ -28,7 +28,6 @@ async function main() {
   await prisma.vehicleSource.deleteMany();
   await prisma.vehicleStatusTransition.deleteMany();
   await prisma.vehicleStatus.deleteMany();
-  await prisma.vehicleType.deleteMany();
   await prisma.site.deleteMany();
   await prisma.processSite.deleteMany();
   await prisma.appSetting.deleteMany();
@@ -82,17 +81,6 @@ async function main() {
   });
   const users = await prisma.user.findMany();
   const userByEmail = Object.fromEntries(users.map((user) => [user.email, user]));
-
-  const types = await Promise.all(
-    [
-      ["USADA", "Usada"],
-      ["SERVICO", "Serviço"],
-      ["DEMONSTRACAO", "Demonstração"],
-      ["CORTESIA", "Cortesia"],
-      ["OUTRA", "Outra"],
-    ].map(([code, name]) => prisma.vehicleType.create({ data: { code, name } })),
-  );
-  const typeByCode = Object.fromEntries(types.map((item) => [item.code, item]));
 
   const statuses = await Promise.all(
     ([
@@ -188,7 +176,6 @@ async function main() {
     status: string;
     location?: string;
     source?: string;
-    type?: string;
     photographyStatus?: PhotographyStatus;
     photo?: string;
     commercialNotes?: string;
@@ -478,7 +465,6 @@ async function main() {
       status: "CEDIDO",
       location: "Cedido",
       source: "RETOMA",
-      type: "CORTESIA",
     },
     {
       make: "Toyota",
@@ -512,7 +498,6 @@ async function main() {
       location: "Feira",
       source: "TCAP",
       photographyStatus: "PUBLISHED",
-      type: "SERVICO",
       sold: { sellerEmail: "gestor@lima.local", soldAt: "2026-09-05", price: 17500 },
     },
   ];
@@ -540,7 +525,6 @@ async function main() {
         statusId: statusByCode[item.status].id,
         locationId: item.location ? locationByName[item.location].id : null,
         sourceId: item.source ? sourceByCode[item.source].id : null,
-        vehicleTypeId: typeByCode[item.type ?? "USADA"].id,
         photographyStatus: item.photographyStatus ?? "NOT_PHOTOGRAPHED",
         commercialNotes: item.commercialNotes,
         inspectionDate: item.inspectionDate ? new Date(item.inspectionDate) : null,

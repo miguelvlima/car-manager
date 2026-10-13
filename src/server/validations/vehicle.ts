@@ -1,5 +1,6 @@
 import { PhotographyStatus } from "@prisma/client";
 import { z } from "zod";
+import { VEHICLE_LIST_SORTS } from "@/lib/vehicle-status";
 
 const optionalText = z
   .string()
@@ -42,9 +43,8 @@ export const vehicleCreateSchema = z.object({
   mileage: optionalNumber,
   passport: boolFromForm.optional(),
   numberOfKeys: optionalNumber,
-  vehicleTypeId: z.string().min(1, "Tipo de viatura obrigatório."),
   sourceId: optionalText,
-  statusId: z.string().min(1, "Estado obrigatório."),
+  statusId: optionalText,
   locationId: optionalText,
   commercialSupport: boolFromForm.optional(),
   commercialSupportAmount: optionalNumber,
@@ -55,6 +55,8 @@ export const vehicleCreateSchema = z.object({
   preparationCost: optionalNumber,
   photographyStatus: z.enum(PhotographyStatus).optional(),
   commercialNotes: optionalText,
+  inspectionReportUrl: optionalText,
+  transportGuideUrl: optionalText,
 });
 
 export const vehicleUpdateSchema = vehicleCreateSchema.partial().extend({
@@ -65,6 +67,7 @@ export const vehicleListQuerySchema = z.object({
   q: z.string().optional(),
   make: z.string().optional(),
   model: z.string().optional(),
+  version: z.string().optional(),
   statusId: z.string().optional(),
   locationId: z.string().optional(),
   sourceId: z.string().optional(),
@@ -79,9 +82,7 @@ export const vehicleListQuerySchema = z.object({
   sellerId: z.string().optional(),
   availableOnly: z.coerce.boolean().optional(),
   catalog: z.coerce.boolean().optional(),
-  sort: z
-    .enum(["newest", "oldest", "days_desc", "days_asc", "price_asc", "price_desc", "km_asc", "km_desc"])
-    .optional(),
+  sort: z.enum(VEHICLE_LIST_SORTS).optional(),
   page: z.coerce.number().optional(),
   pageSize: z.coerce.number().optional(),
 });
@@ -91,15 +92,12 @@ export const saleSchema = z.object({
   soldAt: z.string().min(1),
   sellerId: z.string().optional(),
   finalPrice: z.coerce.number().positive("Preço final obrigatório."),
-  customerRef: optionalText,
-  expectedDeliveryAt: optionalText,
   notes: optionalText,
 });
 
-export const reservationSchema = z.object({
+export const deliverySchema = z.object({
   vehicleId: z.string().min(1),
-  customerRef: optionalText,
-  notes: optionalText,
+  actualDeliveryAt: z.string().min(1, "Data de entrega obrigatória."),
 });
 
 export const commercialRevertSchema = z.object({
@@ -144,13 +142,6 @@ export const statusSchema = z.object({
   sortOrder: optionalNumber,
 });
 
-export const vehicleTypeSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().trim().min(1, "Nome obrigatório."),
-  code: optionalText,
-  isActive: boolFromForm.optional(),
-});
-
 export const processSiteSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1, "Nome obrigatório."),
@@ -184,5 +175,6 @@ export const preparationActionSchema = z.object({
   locationName: optionalText,
   notes: optionalText,
   expectedPickupAt: optionalText,
+  occurredAt: optionalText,
   mileage: optionalNumber,
 });

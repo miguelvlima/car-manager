@@ -20,7 +20,6 @@ const VEHICLES: Array<{
   status: string;
   location?: string;
   source?: string;
-  type?: string;
   photographyStatus?: PhotographyStatus;
   photo?: string;
   reserved?: boolean;
@@ -188,7 +187,6 @@ const VEHICLES: Array<{
     location: "Feira",
     source: "TCAP",
     photographyStatus: "PUBLISHED",
-    type: "SERVICO",
     sold: { soldAt: "2026-09-05", price: 17500 },
   },
 ];
@@ -226,7 +224,6 @@ async function main() {
   if (!admin) throw new Error("Super Admin em falta na produção.");
 
   const site = await prisma.site.findUnique({ where: { code: "LIMA" } });
-  const types = Object.fromEntries((await prisma.vehicleType.findMany()).map((item) => [item.code, item]));
   const statuses = Object.fromEntries((await prisma.vehicleStatus.findMany()).map((item) => [item.code, item]));
   const locations = Object.fromEntries((await prisma.location.findMany()).map((item) => [item.name, item]));
   const sources = Object.fromEntries((await prisma.vehicleSource.findMany()).map((item) => [item.code, item]));
@@ -263,7 +260,6 @@ async function main() {
         statusId: statuses[item.status].id,
         locationId: item.location ? locations[item.location].id : null,
         sourceId: item.source ? sources[item.source].id : null,
-        vehicleTypeId: types[item.type ?? "USADA"].id,
         photographyStatus: item.photographyStatus ?? "NOT_PHOTOGRAPHED",
         createdById: admin.id,
         siteId: site?.id ?? null,
