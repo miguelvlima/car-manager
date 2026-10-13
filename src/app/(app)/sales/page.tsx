@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { LiveFilterForm } from "@/components/shared/live-filters";
 import { formatDate, formatMoney } from "@/lib/format";
 import { formatPlate } from "@/lib/plate";
+import { DeliverDialog } from "@/components/vehicles/sale-dialog";
 import { can, requirePermission } from "@/server/permissions/check";
 import { getSalesReport } from "@/server/services/dashboard.service";
 import { getLookups } from "@/server/services/vehicle.service";
@@ -88,10 +89,13 @@ export default async function SalesPage({
                 <th className="px-4 py-3">Vendedor</th>
                 <th className="px-4 py-3">Preço</th>
                 <th className="px-4 py-3">Estado</th>
+                <th className="px-4 py-3">Entrega</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {items.map((item) => {
+                const delivered = Boolean(item.actualDeliveryAt);
+                return (
                 <tr key={item.id} className="border-t border-border hover:bg-muted/40">
                   <td className="px-4 py-3 whitespace-nowrap">{formatDate(item.soldAt)}</td>
                   <td className="px-4 py-3">
@@ -106,10 +110,20 @@ export default async function SalesPage({
                   <td className="px-4 py-3">{item.seller.name}</td>
                   <td className="px-4 py-3">{formatMoney(item.finalPrice)}</td>
                   <td className="px-4 py-3">
-                    <Badge tone={item.vehicle.status.color}>{item.vehicle.status.name}</Badge>
+                    {delivered ? <Badge tone="slate">Entregue</Badge> : <Badge tone="blue">Vendida</Badge>}
+                  </td>
+                  <td className="px-4 py-3">
+                    {delivered ? (
+                      <span className="whitespace-nowrap text-muted-foreground">{formatDate(item.actualDeliveryAt)}</span>
+                    ) : can(actor, "vehicle:mark_delivered") ? (
+                      <DeliverDialog vehicleId={item.vehicle.id} size="sm" />
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

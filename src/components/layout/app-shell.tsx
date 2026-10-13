@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Car, CircleDollarSign, LayoutDashboard, LogOut, Menu, Settings, X } from "lucide-react";
+import { ArrowLeft, Car, CircleDollarSign, LogOut, Menu, Settings, X } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { logoutAction } from "@/server/actions";
 import { hasPermission } from "@/server/permissions/catalog";
@@ -27,9 +27,8 @@ export type ShellActor = {
 };
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "report:view" as const },
-  { href: "/vehicles", label: "Viaturas", icon: Car, permission: "vehicle:view" as const },
   { href: "/sales", label: "Vendas", icon: CircleDollarSign, permission: "report:view" as const },
+  { href: "/vehicles", label: "Viaturas", icon: Car, permission: "vehicle:view" as const },
   { href: "/settings", label: "Configurações", icon: Settings, permission: "settings:manage" as const },
 ];
 
@@ -65,7 +64,7 @@ export function AppShell({ actor, children }: { actor: ShellActor; children: Rea
         </div>
         <nav className="min-h-0 flex-1 space-y-1 overflow-hidden px-3 py-4">
           {items.map((item) => {
-            const active = item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href);
+            const active = pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

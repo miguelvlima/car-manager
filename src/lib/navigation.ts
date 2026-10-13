@@ -1,11 +1,11 @@
 import { hasPermission } from "@/server/permissions/catalog";
 
 export function homePath(actor: { roleCode: string; permissions: Iterable<string> }) {
-  return hasPermission(actor.roleCode, actor.permissions, "report:view") ? "/dashboard" : "/vehicles";
+  return hasPermission(actor.roleCode, actor.permissions, "report:view") ? "/sales" : "/vehicles";
 }
 
 export function isIndexPath(pathname: string) {
-  if (pathname === "/dashboard" || pathname === "/vehicles" || pathname === "/sales") return true;
+  if (pathname === "/sales" || pathname === "/vehicles") return true;
   if (/^\/settings\/[^/]+$/.test(pathname)) return true;
   return false;
 }
@@ -23,7 +23,7 @@ export function getFallbackBackHref(pathname: string) {
   if (settingsNew) return `/settings/${settingsNew[1]}`;
   const settingsItem = pathname.match(/^\/settings\/([^/]+)\/[^/]+$/);
   if (settingsItem) return `/settings/${settingsItem[1]}`;
-  return "/dashboard";
+  return "/sales";
 }
 
 export function getBackLabel(pathname: string) {
@@ -50,7 +50,6 @@ export function isValidStoredReturn(stored: string, pathname: string) {
   }
   return (
     stored.startsWith("/vehicles") ||
-    stored.startsWith("/dashboard") ||
     stored.startsWith("/sales")
   );
 }

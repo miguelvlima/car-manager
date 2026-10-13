@@ -11,17 +11,6 @@ export function monthBounds(yearMonth?: string) {
   return { start, end, year, month, yearMonth: `${year}-${String(month).padStart(2, "0")}` };
 }
 
-export async function getDashboardMetrics() {
-  const vehicles = await prisma.vehicle.findMany({
-    where: { deletedAt: null },
-    include: { sales: { where: { cancelledAt: null }, select: { actualDeliveryAt: true } } },
-  });
-  const active = vehicles.filter((vehicle) => !vehicle.sales.some((sale) => sale.actualDeliveryAt));
-  return {
-    totalStock: active.length,
-  };
-}
-
 export async function getSalesReport({
   yearMonth,
   sellerId,
@@ -45,7 +34,6 @@ export async function getSalesReport({
           model: true,
           version: true,
           licensePlate: true,
-          status: { select: { name: true, color: true, code: true } },
         },
       },
     },
@@ -76,6 +64,7 @@ export async function getSalesReport({
     items: sales.map((sale) => ({
       id: sale.id,
       soldAt: sale.soldAt,
+      actualDeliveryAt: sale.actualDeliveryAt,
       finalPrice: toNumber(sale.finalPrice),
       seller: sale.seller,
       vehicle: sale.vehicle,

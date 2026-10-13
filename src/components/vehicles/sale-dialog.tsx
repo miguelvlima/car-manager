@@ -117,7 +117,15 @@ export function SaleDialog({
   );
 }
 
-export function DeliverDialog({ vehicleId }: { vehicleId: string }) {
+export function DeliverDialog({
+  vehicleId,
+  size = "default",
+  variant = "outline",
+}: {
+  vehicleId: string;
+  size?: "default" | "sm";
+  variant?: "default" | "outline";
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -143,7 +151,7 @@ export function DeliverDialog({ vehicleId }: { vehicleId: string }) {
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button variant={variant} size={size} onClick={() => setOpen(true)}>
         Marcar como entregue
       </Button>
       {open ? (
