@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteButton } from "@/components/shared/record-actions";
 import { PhotoThumb } from "@/components/vehicles/photo-thumb";
-import { DeliverDialog, RevertAvailabilityButton, SaleDialog } from "@/components/vehicles/sale-dialog";
+import { DeliverDialog, RevertAvailabilityButton, RevertDeliveryButton, SaleDialog } from "@/components/vehicles/sale-dialog";
 import { formatDate, formatDateTime, formatKm, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isSalesRole } from "@/lib/vehicle-status";
@@ -77,6 +77,7 @@ export default async function VehicleDetailPage({
                 />
               ) : null}
               {can(actor, "vehicle:mark_delivered") && sold && !delivered ? <DeliverDialog vehicleId={vehicle.id} /> : null}
+              {can(actor, "vehicle:mark_delivered") && delivered ? <RevertDeliveryButton vehicleId={vehicle.id} /> : null}
               {can(actor, "vehicle:register_sale") && sold && !delivered ? <RevertAvailabilityButton vehicleId={vehicle.id} /> : null}
               {can(actor, "vehicle:delete") ? (
                 <ConfirmDeleteButton
@@ -224,6 +225,16 @@ export default async function VehicleDetailPage({
           <p>Data de entrega: {formatDate(vehicle.activeSale.actualDeliveryAt)}</p>
           {vehicle.activeSale.notes ? <p>Observação da venda: {vehicle.activeSale.notes}</p> : null}
           {vehicle.activeSale.deliveryNotes ? <p>Observação da entrega: {vehicle.activeSale.deliveryNotes}</p> : null}
+          {delivered ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Com entrega registada ninguém pode anular a venda. Só um administrador pode anular a entrega; depois
+              disso, e só nessa sequência, a venda pode ser anulada.
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Se se enganou na venda, anule-a com uma justificação. A viatura volta a ficar disponível.
+            </p>
+          )}
         </section>
       ) : null}
     </div>

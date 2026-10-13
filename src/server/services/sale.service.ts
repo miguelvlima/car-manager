@@ -121,6 +121,52 @@ export async function markDelivered(actor: Actor, input: { vehicleId: string; ac
   });
 }
 
+export async function unmarkDelivered(actor: Actor, input: { vehicleId: string; reason: string }) {
+  if (!can(actor, "vehicle:mark_delivered")) {
+    throw new AppError("Não tem permissão para anular a entrega.", "FORBIDDEN", 403);
+  }
+  const vehicle = await prisma.vehicle.findFirst({
+    where: { id: input.vehicleId, deletedAt: null },
+    include: {
+      sales: { where: { cancelledAt: null }, orderBy: { soldAt: "desc" }, take: 1, include: { seller: { select: { id: true, name: true } } } },
+    },
+  });
+  if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
+  const sale = vehicle.sales[0];
+  if (!sale?.actualDeliveryAt) throw new AppError("Esta viatura não tem uma entrega para anular.", "CONFLICT");
+
+  await prisma.vehicleSale.update({
+    where: { id: sale.id },
+    data: { actualDeliveryAt: null, deliveryNotes: null },
+  });
+
+  await writeVehicleEvent({
+    vehicleId: vehicle.id,
+    type: "NOTE",
+    title: `Entrega anulada por ${actor.name}`,
+    actor,
+    previous: {
+      saleId: sale.id,
+      actualDeliveryAt: sale.actualDeliveryAt.toISOString(),
+      deliveryNotes: sale.deliveryNotes,
+    },
+    next: { reason: input.reason },
+    notes: input.reason,
+  });
+  await writeAudit({
+    actor,
+    action: "UNMARK_DELIVERED",
+    entityType: "Vehicle",
+    entityId: vehicle.id,
+    previous: {
+      saleId: sale.id,
+      actualDeliveryAt: sale.actualDeliveryAt.toISOString(),
+      deliveryNotes: sale.deliveryNotes,
+    },
+    next: { reason: input.reason },
+  });
+}
+
 export async function cancelSale(actor: Actor, input: { vehicleId: string; reason: string }) {
   if (!can(actor, "vehicle:register_sale")) {
     throw new AppError("Não tem permissão para anular vendas.", "FORBIDDEN", 403);
@@ -136,21 +182,23 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
   const sale = vehicle.sales[0];
   if (!sale) throw new AppError("Esta viatura não tem uma venda ativa.", "CONFLICT");
   if (sale.actualDeliveryAt) {
-    throw new AppError("Não é possível anular uma venda já entregue.", "CONFLICT");
+    throw new AppError(
+      "Não é possível anular uma venda já entregue. Só um administrador pode anular a entrega; depois disso a venda pode ser anulada.",
+      "CONFLICT",
+    );
   }
 
   await prisma.vehicleSale.update({
     where: { id: sale.id },
-    data: { cancelledAt: new Date() },
+    data: { cancelledAt: new Date(), cancelledReason: input.reason },
   });
 
   await writeVehicleEvent({
     vehicleId: vehicle.id,
-    type: "NOTE",
+    type: "SALE_CANCELLED",
     title: `Venda anulada por ${actor.name}`,
     actor,
     previous: {
-      status: vehicle.status.code,
       saleId: sale.id,
       sellerId: sale.sellerId,
       finalPrice: Number(sale.finalPrice),
@@ -163,7 +211,7 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
     action: "CANCEL_SALE",
     entityType: "Vehicle",
     entityId: vehicle.id,
-    previous: { status: vehicle.status.code, saleId: sale.id, sellerId: sale.sellerId, finalPrice: Number(sale.finalPrice) },
+    previous: { saleId: sale.id, sellerId: sale.sellerId, finalPrice: Number(sale.finalPrice) },
     next: { reason: input.reason },
   });
 }

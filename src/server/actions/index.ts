@@ -22,7 +22,7 @@ import {
 } from "@/server/validations/vehicle";
 import { loginSchema } from "@/server/validations/auth";
 import { createVehicle, deletePhoto, deleteVehicle, setPrimaryPhoto, updateVehicle } from "@/server/services/vehicle.service";
-import { cancelSale, markDelivered, registerSale } from "@/server/services/sale.service";
+import { cancelSale, markDelivered, registerSale, unmarkDelivered } from "@/server/services/sale.service";
 import {
   deleteLocation,
   deleteProcessSite,
@@ -162,6 +162,17 @@ export async function markDeliveredAction(input: unknown) {
     const actor = await requirePermission("vehicle:mark_delivered");
     const data = deliverySchema.parse(input);
     await markDelivered(actor, data);
+    return { ok: true as const, data: true };
+  } catch (error) {
+    return toActionResult(error);
+  }
+}
+
+export async function unmarkDeliveredAction(input: unknown) {
+  try {
+    const actor = await requirePermission("vehicle:mark_delivered");
+    const data = commercialRevertSchema.parse(input);
+    await unmarkDelivered(actor, data);
     return { ok: true as const, data: true };
   } catch (error) {
     return toActionResult(error);

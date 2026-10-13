@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { toDateInput } from "@/lib/format";
 import { formatMoney } from "@/lib/format";
-import { cancelSaleAction, markDeliveredAction, registerSaleAction } from "@/server/actions";
+import { cancelSaleAction, markDeliveredAction, registerSaleAction, unmarkDeliveredAction } from "@/server/actions";
 
 export function SaleDialog({
   vehicleId,
@@ -159,8 +159,8 @@ export function DeliverDialog({
           <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-3xl bg-card p-6">
             <h3 className="text-xl font-semibold">Marcar como entregue</h3>
             <p className="text-sm text-muted-foreground">
-              Depois de gravar a data de entrega, a viatura deixa de aparecer na listagem dos vendedores. O histórico
-              mantém-se para o admin.
+              Depois da entrega a viatura sai da lista dos vendedores e a venda deixa de poder ser anulada. Só um
+              administrador pode anular a entrega; só nessa altura a venda volta a poder ser anulada.
             </p>
             <div>
               <Label>Data de entrega</Label>
@@ -183,7 +183,55 @@ export function DeliverDialog({
   );
 }
 
-export function RevertAvailabilityButton({ vehicleId }: { vehicleId: string }) {
+export function RevertAvailabilityButton({ vehicleId, size = "default" }: { vehicleId: string; size?: "default" | "sm" }) {
+  return (
+    <RevertActionButton
+      vehicleId={vehicleId}
+      size={size}
+      action={cancelSaleAction}
+      trigger="Anular venda"
+      title="Anular venda?"
+      description="A viatura volta a ficar disponível. Tem de indicar o motivo; a anulação fica no histórico da ficha e na auditoria."
+      confirm="Confirmar anulação da venda"
+      success="Venda anulada."
+    />
+  );
+}
+
+export function RevertDeliveryButton({ vehicleId, size = "default" }: { vehicleId: string; size?: "default" | "sm" }) {
+  return (
+    <RevertActionButton
+      vehicleId={vehicleId}
+      size={size}
+      action={unmarkDeliveredAction}
+      trigger="Anular entrega"
+      title="Anular entrega?"
+      description="A viatura volta a 'Vendida', sem data de entrega. A venda em si não é anulada neste passo — isso só pode ser feito a seguir, à parte. O motivo fica no histórico e na auditoria."
+      confirm="Confirmar anulação da entrega"
+      success="Entrega anulada. A viatura volta à lista dos vendedores e a venda já pode ser anulada."
+    />
+  );
+}
+
+function RevertActionButton({
+  vehicleId,
+  size,
+  action,
+  trigger,
+  title,
+  description,
+  confirm,
+  success,
+}: {
+  vehicleId: string;
+  size?: "default" | "sm";
+  action: (input: { vehicleId: string; reason: string }) => Promise<{ ok: true; data: true } | { ok: false; error: string }>;
+  trigger: string;
+  title: string;
+  description: string;
+  confirm: string;
+  success: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -191,40 +239,37 @@ export function RevertAvailabilityButton({ vehicleId }: { vehicleId: string }) {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
-    const formData = new FormData(event.currentTarget);
-    const result = await cancelSaleAction({ vehicleId, reason: String(formData.get("reason") ?? "") });
+    const result = await action({ vehicleId, reason: String(new FormData(event.currentTarget).get("reason") ?? "") });
     setPending(false);
     if (!result.ok) {
       toast.error(result.error);
       return;
     }
-    toast.success("Venda anulada.");
+    toast.success(success);
     setOpen(false);
     router.refresh();
   }
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        Anular venda
+      <Button variant="outline" size={size} onClick={() => setOpen(true)}>
+        {trigger}
       </Button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
           <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-3xl bg-card p-6">
-            <h3 className="text-xl font-semibold">Anular venda?</h3>
-            <p className="text-sm text-muted-foreground">
-              Tem de indicar o motivo; a anulação fica registada no histórico da ficha e na auditoria.
-            </p>
+            <h3 className="text-xl font-semibold">{title}</h3>
+            <p className="text-sm text-muted-foreground">{description}</p>
             <div>
-              <Label htmlFor="reason-sale">Justificação</Label>
-              <Textarea id="reason-sale" name="reason" required minLength={8} placeholder="Explique o engano ou o motivo da anulação" />
+              <Label>Justificação</Label>
+              <Textarea name="reason" required minLength={8} placeholder="Explique o engano ou o motivo da anulação" />
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
                 Cancelar
               </Button>
               <Button type="submit" disabled={pending}>
-                {pending ? "A anular..." : "Confirmar anulação da venda"}
+                {pending ? "A anular..." : confirm}
               </Button>
             </div>
           </form>

@@ -75,6 +75,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   DELETE_PROCESS_SITE: "Local de processo eliminado",
   REGISTER_SALE: "Venda registada",
   MARK_DELIVERED: "Viatura entregue",
+  UNMARK_DELIVERED: "Entrega anulada",
   CANCEL_SALE: "Venda anulada",
   ADD_PHOTO: "Fotografia adicionada",
   SET_PRIMARY_PHOTO: "Fotografia principal definida",
