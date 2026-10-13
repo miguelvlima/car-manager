@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { toDateInput } from "@/lib/format";
 import { formatMoney } from "@/lib/format";
+import type { ActionResult } from "@/lib/errors";
 import { cancelSaleAction, markDeliveredAction, registerSaleAction, unmarkDeliveredAction } from "@/server/actions";
 
 export function SaleDialog({
@@ -225,7 +226,7 @@ function RevertActionButton({
 }: {
   vehicleId: string;
   size?: "default" | "sm";
-  action: (input: { vehicleId: string; reason: string }) => Promise<{ ok: true; data: true } | { ok: false; error: string }>;
+  action: (input: unknown) => Promise<ActionResult<boolean>>;
   trigger: string;
   title: string;
   description: string;
