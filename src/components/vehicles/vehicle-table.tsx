@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { RowActions } from "@/components/shared/record-actions";
 import { LiveFilterForm } from "@/components/shared/live-filters";
+import { STATUS_FILTER_NONE } from "@/lib/vehicle-status";
 import { PhotoThumb } from "@/components/vehicles/photo-thumb";
+import { VehicleStatusBadges } from "@/components/vehicles/status-badges";
 import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteVehicleAction } from "@/server/actions";
@@ -111,9 +112,7 @@ export function VehicleTable({
                 <td className="px-4 py-3">{vehicle.location?.name ?? "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    <Badge tone={vehicle.status.color}>{vehicle.status.name}</Badge>
-                    {vehicle.activeSale?.actualDeliveryAt ? <Badge tone="slate">Entregue</Badge> : null}
-                    {vehicle.activeSale && !vehicle.activeSale.actualDeliveryAt ? <Badge tone="blue">Vendida</Badge> : null}
+                    <VehicleStatusBadges vehicle={vehicle} />
                   </div>
                 </td>
                 <td className={cn("px-4 py-3 font-medium", `stock-${vehicle.ageLevel}`)}>{vehicle.daysInStock}</td>
@@ -149,7 +148,7 @@ export function VehicleFilters({
   models,
   versions,
 }: {
-  statuses: Array<{ id: string; name: string }>;
+  statuses: Array<{ id: string; name: string; filterSelectedByDefault?: boolean }>;
   locations: Array<{ id: string; name: string }>;
   sources: Array<{ id: string; name: string }>;
   makes: string[];
@@ -160,6 +159,9 @@ export function VehicleFilters({
     <LiveFilterForm
       className="grid gap-3 rounded-3xl border border-border bg-card p-4 md:grid-cols-4 lg:grid-cols-7"
       preserve={["inStock", "available", "sort"]}
+      defaults={{
+        statusId: statuses.filter((item) => item.filterSelectedByDefault).map((item) => item.id).join(","),
+      }}
       fields={[
         { type: "search", name: "q", placeholder: "Marca, modelo, versão, matrícula", className: "h-10 rounded-lg border border-border px-3 text-sm md:col-span-2 lg:col-span-2" },
         {
@@ -181,9 +183,10 @@ export function VehicleFilters({
           options: versions.map((item) => ({ value: item, label: item })),
         },
         {
-          type: "select",
+          type: "multiselect",
           name: "statusId",
           emptyLabel: "Estado",
+          emptyValue: STATUS_FILTER_NONE,
           options: statuses.map((item) => ({ value: item.id, label: item.name })),
         },
         {

@@ -107,6 +107,7 @@ async function main() {
           color,
           category,
           isAvailableForSale: Boolean(isAvailableForSale),
+          filterSelectedByDefault: code !== "ENTREGUE",
           sortOrder: index,
         },
       }),

@@ -139,6 +139,7 @@ export const statusSchema = z.object({
   color: z.enum(["green", "yellow", "orange", "red", "blue", "slate"]),
   category: z.enum(["operational", "commercial", "terminal"]),
   isAvailableForSale: boolFromForm.optional(),
+  filterSelectedByDefault: boolFromForm.optional(),
   isActive: boolFromForm.optional(),
   sortOrder: optionalNumber,
 });

@@ -32,6 +32,7 @@ export default async function VehiclesPage({
       year: query.year ? Number(query.year) : undefined,
       inStock,
       availableOnly: available,
+      applyDefaultStatusFilter: true,
     }),
     getLookups(),
   ]);

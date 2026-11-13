@@ -49,6 +49,7 @@ export default async function StatusesSettingsPage({
               <th className="px-4 py-3">Código</th>
               <th className="px-4 py-3">Categoria</th>
               <th className="px-4 py-3">Viaturas</th>
+              <th className="px-4 py-3">Filtro inicial</th>
               <th className="px-4 py-3">Estado</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
@@ -66,6 +67,9 @@ export default async function StatusesSettingsPage({
                   {STATUS_CATEGORY_LABELS[item.category as keyof typeof STATUS_CATEGORY_LABELS] ?? item.category}
                 </td>
                 <td className="px-4 py-3">{item._count.vehicles}</td>
+                <td className="px-4 py-3">
+                  {item.filterSelectedByDefault ? "Marcado" : "Desmarcado"}
+                </td>
                 <td className="px-4 py-3">
                   <Badge tone={item.isActive ? "green" : "red"}>{item.isActive ? "Ativo" : "Inativo"}</Badge>
                 </td>

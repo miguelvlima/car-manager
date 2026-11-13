@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { STATUS_FILTER_NONE } from "@/lib/vehicle-status";
 
 type FilterField =
   | { type: "search"; name: string; placeholder?: string; className?: string }
@@ -10,6 +11,14 @@ type FilterField =
       type: "select";
       name: string;
       emptyLabel: string;
+      options: Array<{ value: string; label: string }>;
+      className?: string;
+    }
+  | {
+      type: "multiselect";
+      name: string;
+      emptyLabel: string;
+      emptyValue?: string;
       options: Array<{ value: string; label: string }>;
       className?: string;
     };
@@ -86,6 +95,19 @@ export function LiveFilterForm({
             />
           );
         }
+        if (field.type === "multiselect") {
+          return (
+            <MultiSelect
+              key={field.name}
+              emptyLabel={field.emptyLabel}
+              emptyValue={field.emptyValue}
+              options={field.options}
+              value={fieldValue(field.name)}
+              className={field.className}
+              onCommit={(value) => push({ [field.name]: value })}
+            />
+          );
+        }
         return (
           <select
             key={field.name}
@@ -102,6 +124,106 @@ export function LiveFilterForm({
           </select>
         );
       })}
+    </div>
+  );
+}
+
+function parseCsv(value: string) {
+  if (!value || value === STATUS_FILTER_NONE) return [];
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function MultiSelect({
+  emptyLabel,
+  emptyValue,
+  options,
+  value,
+  className,
+  onCommit,
+}: {
+  emptyLabel: string;
+  emptyValue?: string;
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  className?: string;
+  onCommit: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const selected = parseCsv(value);
+  const selectedSet = new Set(selected);
+
+  useEffect(() => {
+    function onPointerDown(event: PointerEvent) {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, []);
+
+  function commit(next: string[]) {
+    onCommit(next.length ? next.join(",") : (emptyValue ?? ""));
+  }
+
+  function toggle(id: string) {
+    commit(selectedSet.has(id) ? selected.filter((item) => item !== id) : [...selected, id]);
+  }
+
+  return (
+    <div ref={root} className={`relative ${className ?? ""}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 text-left text-sm"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="truncate text-muted-foreground">{emptyLabel}</span>
+        <span className="text-xs text-muted-foreground">{open ? "▴" : "▾"}</span>
+      </button>
+      {open ? (
+        <div
+          className="absolute z-50 mt-1 max-h-72 w-full min-w-[18rem] overflow-auto rounded-xl border border-border bg-card p-2 shadow-lg"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="sticky top-0 z-10 mb-1 grid grid-cols-2 gap-1 border-b border-border bg-card pb-2">
+            <button
+              type="button"
+              className="rounded-lg px-2 py-1.5 text-xs font-medium hover:bg-muted"
+              onClick={() => commit(options.map((option) => option.value))}
+            >
+              Escolher todos
+            </button>
+            <button
+              type="button"
+              className="rounded-lg px-2 py-1.5 text-xs font-medium hover:bg-muted"
+              onClick={() => commit([])}
+            >
+              Remover todos
+            </button>
+          </div>
+          {options.map((option) => {
+            const checked = selectedSet.has(option.value);
+            return (
+              <label
+                key={option.value}
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(option.value)}
+                  className="size-4 accent-primary"
+                />
+                {option.label}
+              </label>
+            );
+          })}
+          {selected.length ? null : (
+            <p className="px-2 py-1 text-xs text-muted-foreground">A lista mostra só os estados selecionados.</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

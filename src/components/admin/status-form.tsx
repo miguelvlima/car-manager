@@ -18,6 +18,7 @@ export function StatusForm({
     color: string;
     category: string;
     isAvailableForSale: boolean;
+    filterSelectedByDefault: boolean;
     isActive: boolean;
     sortOrder: number;
   };
@@ -79,6 +80,16 @@ export function StatusForm({
             <option value="true">Sim</option>
             <option value="false">Não</option>
           </Select>
+        </div>
+        <div className="md:col-span-2">
+          <Label>Selecionado no filtro da lista</Label>
+          <Select name="filterSelectedByDefault" defaultValue={status?.filterSelectedByDefault === false ? "false" : "true"}>
+            <option value="true">Sim — aparece marcado por defeito</option>
+            <option value="false">Não — fica de fora até o escolherem</option>
+          </Select>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Controla se este estado vem selecionado quando se abre a lista de viaturas. Pode sempre alterar-se no filtro.
+          </p>
         </div>
       </section>
       <Button disabled={pending}>{pending ? "A gravar..." : status ? "Guardar alterações" : "Criar estado"}</Button>

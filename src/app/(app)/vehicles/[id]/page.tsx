@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteButton } from "@/components/shared/record-actions";
 import { PhotoThumb } from "@/components/vehicles/photo-thumb";
+import { VehicleStatusBadges } from "@/components/vehicles/status-badges";
 import { DeliverDialog, RevertAvailabilityButton, RevertDeliveryButton, SaleDialog } from "@/components/vehicles/sale-dialog";
 import { formatDate, formatDateTime, formatKm, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -52,9 +52,7 @@ export default async function VehicleDetailPage({
           </div>
           <div className="min-w-0 flex-1 space-y-3">
             <div className="flex flex-wrap gap-2">
-              <Badge tone={vehicle.status.color}>{vehicle.status.name}</Badge>
-              {delivered ? <Badge tone="slate">Entregue</Badge> : null}
-              {sold && !delivered ? <Badge tone="blue">Vendida</Badge> : null}
+              <VehicleStatusBadges vehicle={vehicle} />
             </div>
             <div>
               <h1 className="text-2xl font-semibold md:text-3xl">

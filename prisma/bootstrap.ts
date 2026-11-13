@@ -76,7 +76,15 @@ export async function bootstrapCatalog() {
     await prisma.vehicleStatus.upsert({
       where: { code },
       update: {},
-      create: { code, name, color, category, isAvailableForSale, sortOrder: index },
+      create: {
+        code,
+        name,
+        color,
+        category,
+        isAvailableForSale,
+        filterSelectedByDefault: code !== "ENTREGUE",
+        sortOrder: index,
+      },
     });
   }
 

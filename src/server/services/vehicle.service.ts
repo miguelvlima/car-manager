@@ -7,7 +7,7 @@ import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 import { getStockSettings } from "@/server/services/settings.service";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
 import { sanitizeVehiclePatch, type VehicleWritableFields } from "@/server/services/vehicle-sanitize";
-import { isSalesRole, type VehicleListSort } from "@/lib/vehicle-status";
+import { isSalesRole, STATUS_FILTER_NONE, type VehicleListSort } from "@/lib/vehicle-status";
 
 const vehicleInclude = {
   status: true,
@@ -26,7 +26,7 @@ export type VehicleListQuery = {
   make?: string;
   model?: string;
   version?: string;
-  statusId?: string;
+  statusId?: string | string[];
   locationId?: string;
   sourceId?: string;
   photographyStatus?: PhotographyStatus;
@@ -41,6 +41,7 @@ export type VehicleListQuery = {
   availableOnly?: boolean;
   inStock?: boolean;
   catalog?: boolean;
+  applyDefaultStatusFilter?: boolean;
   sort?: VehicleListSort;
   page?: number;
   pageSize?: number;
@@ -74,58 +75,91 @@ function toDecimal(value?: number | null) {
   return new Prisma.Decimal(value);
 }
 
+function parseStatusIds(value?: string | string[]) {
+  const parts = Array.isArray(value) ? value : value ? value.split(",") : [];
+  return [...new Set(parts.map((item) => item.trim()).filter((item) => item && item !== STATUS_FILTER_NONE))];
+}
+
+function whereForCatalogStatus(status: { id: string; code: string }): Prisma.VehicleWhereInput {
+  if (status.code === "ENTREGUE") {
+    return {
+      OR: [
+        { statusId: status.id },
+        { sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } } },
+      ],
+    };
+  }
+  if (status.code === "VENDIDO") {
+    return {
+      OR: [
+        { statusId: status.id },
+        { sales: { some: { cancelledAt: null, actualDeliveryAt: null } } },
+      ],
+    };
+  }
+  return { statusId: status.id };
+}
+
 export async function listVehicles(actor: Actor, query: VehicleListQuery) {
   const settings = await getStockSettings();
   const page = Math.max(1, query.page ?? 1);
   const pageSize = Math.min(60, Math.max(1, query.pageSize ?? 24));
   const plate = normalizePlate(query.q);
   const sourceId = query.sourceId?.trim() || undefined;
-  const where: Prisma.VehicleWhereInput = {
-    deletedAt: null,
-    ...(query.make ? { make: { equals: query.make, mode: "insensitive" } } : {}),
-    ...(query.model ? { model: { equals: query.model, mode: "insensitive" } } : {}),
-    ...(query.version ? { version: { equals: query.version, mode: "insensitive" } } : {}),
-    ...(query.statusId ? { statusId: query.statusId } : {}),
-    ...(query.locationId ? { locationId: query.locationId } : {}),
-    ...(sourceId ? { sourceId } : {}),
-    ...(query.photographyStatus ? { photographyStatus: query.photographyStatus } : {}),
-    ...(query.year ? { year: query.year } : {}),
+  const catalogStatuses = await prisma.vehicleStatus.findMany({
+    where: { isActive: true },
+    select: { id: true, code: true, filterSelectedByDefault: true },
+    orderBy: { sortOrder: "asc" },
+  });
+  const explicitStatusFilter = query.statusId != null && String(query.statusId).length > 0;
+  const statusIds = parseStatusIds(query.statusId);
+  const selectedStatuses = explicitStatusFilter
+    ? catalogStatuses.filter((status) => statusIds.includes(status.id))
+    : query.applyDefaultStatusFilter
+      ? catalogStatuses.filter((status) => status.filterSelectedByDefault)
+      : [];
+  const includeDelivered = selectedStatuses.some((status) => status.code === "ENTREGUE");
+  const hideDelivered = query.availableOnly || query.catalog || query.inStock || !includeDelivered;
+  const clauses: Prisma.VehicleWhereInput[] = [
+    { deletedAt: null },
+    ...(query.make ? [{ make: { equals: query.make, mode: "insensitive" as const } }] : []),
+    ...(query.model ? [{ model: { equals: query.model, mode: "insensitive" as const } }] : []),
+    ...(query.version ? [{ version: { equals: query.version, mode: "insensitive" as const } }] : []),
+    ...(selectedStatuses.length
+      ? [{ OR: selectedStatuses.map(whereForCatalogStatus) }]
+      : explicitStatusFilter
+        ? [{ id: { in: ["__no_status__"] } }]
+        : []),
+    ...(query.locationId ? [{ locationId: query.locationId }] : []),
+    ...(sourceId ? [{ sourceId }] : []),
+    ...(query.photographyStatus ? [{ photographyStatus: query.photographyStatus }] : []),
+    ...(query.year ? [{ year: query.year }] : []),
     ...(query.minPrice != null || query.maxPrice != null
-      ? { salePrice: { gte: query.minPrice, lte: query.maxPrice } }
-      : {}),
+      ? [{ salePrice: { gte: query.minPrice, lte: query.maxPrice } }]
+      : []),
     ...(query.minKm != null || query.maxKm != null
-      ? { mileage: { gte: query.minKm, lte: query.maxKm } }
-      : {}),
-    ...(query.availableOnly || query.catalog || query.inStock
-      ? {
-          NOT: {
-            sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } },
-          },
-        }
-      : {}),
-    ...(query.sellerId
-      ? { sales: { some: { sellerId: query.sellerId, cancelledAt: null } } }
-      : {}),
+      ? [{ mileage: { gte: query.minKm, lte: query.maxKm } }]
+      : []),
+    ...(hideDelivered
+      ? [{ NOT: { sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } } } }]
+      : []),
+    ...(query.sellerId ? [{ sales: { some: { sellerId: query.sellerId, cancelledAt: null } } }] : []),
     ...(query.q
-      ? {
-          OR: [
-            { make: { contains: query.q, mode: "insensitive" } },
-            { model: { contains: query.q, mode: "insensitive" } },
-            { version: { contains: query.q, mode: "insensitive" } },
-            { internalCode: { contains: query.q, mode: "insensitive" } },
-            { source: { name: { contains: query.q, mode: "insensitive" } } },
-            ...(plate ? [{ licensePlateNormalized: { contains: plate } }] : []),
-          ],
-        }
-      : {}),
-    ...(isSalesRole(actor.roleCode)
-      ? {
-          NOT: {
-            sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } },
+      ? [
+          {
+            OR: [
+              { make: { contains: query.q, mode: "insensitive" as const } },
+              { model: { contains: query.q, mode: "insensitive" as const } },
+              { version: { contains: query.q, mode: "insensitive" as const } },
+              { internalCode: { contains: query.q, mode: "insensitive" as const } },
+              { source: { name: { contains: query.q, mode: "insensitive" as const } } },
+              ...(plate ? [{ licensePlateNormalized: { contains: plate } }] : []),
+            ],
           },
-        }
-      : {}),
-  };
+        ]
+      : []),
+  ];
+  const where: Prisma.VehicleWhereInput = { AND: clauses };
 
   const rows = await prisma.vehicle.findMany({
     where,

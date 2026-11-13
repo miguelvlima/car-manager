@@ -21,6 +21,8 @@ export const VEHICLE_LIST_SORTS = [
 
 export type VehicleListSort = (typeof VEHICLE_LIST_SORTS)[number];
 
+export const STATUS_FILTER_NONE = "none";
+
 export function isSalesRole(roleCode: string) {
   return roleCode === "SALES";
 }
@@ -30,4 +32,19 @@ export function operationalStatuses<T extends { code: string; category?: string 
     if (currentCode && status.code === currentCode) return true;
     return !status.category || status.category === "operational";
   });
+}
+
+const SALE_OUTCOME_CODES = new Set(["ENTREGUE", "VENDIDO"]);
+
+export function saleStatusOverlay(vehicle: {
+  status: { code: string };
+  activeSale?: { actualDeliveryAt?: Date | string | null } | null;
+}) {
+  const delivered = Boolean(vehicle.activeSale?.actualDeliveryAt);
+  const sold = Boolean(vehicle.activeSale && !delivered);
+  return {
+    showCatalogStatus: !vehicle.activeSale || !SALE_OUTCOME_CODES.has(vehicle.status.code),
+    delivered,
+    sold,
+  };
 }

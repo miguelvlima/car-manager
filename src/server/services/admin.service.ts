@@ -374,6 +374,7 @@ export async function upsertStatus(
     color: string;
     category: string;
     isAvailableForSale?: boolean;
+    filterSelectedByDefault?: boolean;
     isActive?: boolean;
     sortOrder?: number;
   },
@@ -386,6 +387,7 @@ export async function upsertStatus(
     color: input.color,
     category: input.category,
     isAvailableForSale: input.isAvailableForSale ?? previous?.isAvailableForSale ?? false,
+    filterSelectedByDefault: input.filterSelectedByDefault ?? previous?.filterSelectedByDefault ?? true,
     isActive: input.isActive ?? true,
     sortOrder: input.sortOrder ?? 0,
   };
@@ -397,6 +399,7 @@ export async function upsertStatus(
           color: data.color,
           category: data.category,
           isAvailableForSale: data.isAvailableForSale,
+          filterSelectedByDefault: data.filterSelectedByDefault,
           isActive: data.isActive,
           sortOrder: data.sortOrder,
         },
@@ -414,6 +417,7 @@ export async function upsertStatus(
           color: previous.color,
           category: previous.category,
           isAvailableForSale: previous.isAvailableForSale,
+          filterSelectedByDefault: previous.filterSelectedByDefault,
           isActive: previous.isActive,
           sortOrder: previous.sortOrder,
         }
