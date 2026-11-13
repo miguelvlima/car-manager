@@ -4,12 +4,12 @@ import { AppError } from "@/lib/errors";
 import { can, type Actor } from "@/server/permissions/check";
 import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 import { getStockSettings } from "@/server/services/settings.service";
-import { SALE_OUTCOME_CODES } from "@/lib/vehicle-status";
+import { BUTTON_COMMERCIAL_CODES } from "@/lib/vehicle-status";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
 
-async function applyCatalogStatus(
+async function applyCommercialStatus(
   db: Prisma.TransactionClient,
-  vehicle: { id: string; statusId: string; status: { name: string } },
+  vehicle: { id: string; commercialStatusId: string; commercialStatus: { name: string } },
   code: string,
   actor: Actor,
 ) {
@@ -17,19 +17,20 @@ async function applyCatalogStatus(
   if (!status) {
     throw new AppError(`O estado «${code}» não existe. Crie-o em Configurações → Estados.`, "NOT_FOUND", 404);
   }
-  if (status.id === vehicle.statusId) return null;
-  const fromName = vehicle.status.name;
-  await db.vehicle.update({ where: { id: vehicle.id }, data: { statusId: status.id } });
+  if (status.id === vehicle.commercialStatusId) return null;
+  const fromName = vehicle.commercialStatus.name;
+  await db.vehicle.update({ where: { id: vehicle.id }, data: { commercialStatusId: status.id } });
   await db.vehicleStatusHistory.create({
     data: {
       vehicleId: vehicle.id,
-      fromStatusId: vehicle.statusId,
+      kind: "commercial",
+      fromStatusId: vehicle.commercialStatusId,
       toStatusId: status.id,
       changedById: actor.id,
     },
   });
-  vehicle.statusId = status.id;
-  vehicle.status = { name: status.name };
+  vehicle.commercialStatusId = status.id;
+  vehicle.commercialStatus = { name: status.name };
   return { fromName, toName: status.name };
 }
 
@@ -42,29 +43,29 @@ async function logStatusChange(
   await writeVehicleEvent({
     vehicleId,
     type: "STATUS_CHANGED",
-    title: `Estado: ${change.fromName} → ${change.toName}`,
+    title: `Estado comercial: ${change.fromName} → ${change.toName}`,
     actor,
-    previous: { status: change.fromName },
-    next: { status: change.toName },
+    previous: { commercialStatus: change.fromName },
+    next: { commercialStatus: change.toName },
   });
 }
 
-async function restoreStatusAfterSale(db: Prisma.TransactionClient, vehicleId: string, actor: Actor) {
+async function restoreCommercialAfterSale(db: Prisma.TransactionClient, vehicleId: string, actor: Actor) {
   const vehicle = await db.vehicle.findFirstOrThrow({
     where: { id: vehicleId },
-    include: { status: true },
+    include: { commercialStatus: true },
   });
   const history = await db.vehicleStatusHistory.findMany({
-    where: { vehicleId },
+    where: { vehicleId, kind: "commercial" },
     orderBy: { changedAt: "desc" },
     take: 20,
     include: { fromStatus: true },
   });
   const previous = history.find(
-    (row) => row.fromStatus && !SALE_OUTCOME_CODES.has(row.fromStatus.code),
+    (row) => row.fromStatus && !BUTTON_COMMERCIAL_CODES.has(row.fromStatus.code),
   )?.fromStatus;
   const code = previous?.code ?? "DISPONIVEL_PARA_VENDA";
-  return applyCatalogStatus(db, vehicle, code, actor);
+  return applyCommercialStatus(db, vehicle, code, actor);
 }
 
 export async function listSaleSellers() {
@@ -110,7 +111,7 @@ export async function registerSale(
   }
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
-    include: { status: true, photos: true, location: true, source: true, sales: { include: { seller: { select: { id: true, name: true } } } } },
+    include: { operationalStatus: true, commercialStatus: true, photos: true, location: true, source: true, sales: { include: { seller: { select: { id: true, name: true } } } } },
   });
   if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
   if (vehicle.sales.some((sale) => !sale.cancelledAt)) {
@@ -133,7 +134,7 @@ export async function registerSale(
       where: { id: vehicle.id },
       data: { salePrice: input.finalPrice },
     });
-    const change = await applyCatalogStatus(tx, vehicle, "VENDIDO", actor);
+    const change = await applyCommercialStatus(tx, vehicle, "VENDIDO", actor);
 
     return { sale: created, statusChange: change };
   });
@@ -159,7 +160,8 @@ export async function registerSale(
   const fresh = await prisma.vehicle.findFirstOrThrow({
     where: { id: vehicle.id },
     include: {
-      status: true,
+      operationalStatus: true,
+      commercialStatus: true,
       location: true,
       source: true,
       photos: { where: { deletedAt: null } },
@@ -176,7 +178,7 @@ export async function markDelivered(actor: Actor, input: { vehicleId: string; ac
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
     include: {
-      status: true,
+      commercialStatus: true,
       sales: { where: { cancelledAt: null }, orderBy: { soldAt: "desc" }, take: 1, include: { seller: { select: { id: true, name: true } } } },
     },
   });
@@ -195,7 +197,7 @@ export async function markDelivered(actor: Actor, input: { vehicleId: string; ac
       where: { id: sale.id },
       data: { actualDeliveryAt: deliveredAt, deliveryNotes: notes },
     });
-    return applyCatalogStatus(tx, vehicle, "ENTREGUE", actor);
+    return applyCommercialStatus(tx, vehicle, "ENTREGUE", actor);
   });
   await logStatusChange(vehicle.id, actor, statusChange);
 
@@ -223,7 +225,7 @@ export async function unmarkDelivered(actor: Actor, input: { vehicleId: string; 
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
     include: {
-      status: true,
+      commercialStatus: true,
       sales: { where: { cancelledAt: null }, orderBy: { soldAt: "desc" }, take: 1, include: { seller: { select: { id: true, name: true } } } },
     },
   });
@@ -236,7 +238,7 @@ export async function unmarkDelivered(actor: Actor, input: { vehicleId: string; 
       where: { id: sale.id },
       data: { actualDeliveryAt: null, deliveryNotes: null },
     });
-    return applyCatalogStatus(tx, vehicle, "VENDIDO", actor);
+    return applyCommercialStatus(tx, vehicle, "VENDIDO", actor);
   });
   await logStatusChange(vehicle.id, actor, statusChange);
 
@@ -274,7 +276,7 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
     include: {
-      status: true,
+      commercialStatus: true,
       sales: { where: { cancelledAt: null }, orderBy: { soldAt: "desc" }, take: 1, include: { seller: { select: { id: true, name: true } } } },
     },
   });
@@ -293,7 +295,7 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
       where: { id: sale.id },
       data: { cancelledAt: new Date(), cancelledReason: input.reason },
     });
-    return restoreStatusAfterSale(tx, vehicle.id, actor);
+    return restoreCommercialAfterSale(tx, vehicle.id, actor);
   });
   await logStatusChange(vehicle.id, actor, statusChange);
 
@@ -320,6 +322,66 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
   });
 }
 
+export async function markReturned(actor: Actor, input: { vehicleId: string; reason: string }) {
+  if (!can(actor, "vehicle:change_status") && !can(actor, "vehicle:edit")) {
+    throw new AppError("Não tem permissão para marcar a devolução.", "FORBIDDEN", 403);
+  }
+  const vehicle = await prisma.vehicle.findFirst({
+    where: { id: input.vehicleId, deletedAt: null },
+    include: { commercialStatus: true },
+  });
+  if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
+  if (vehicle.commercialStatus.code === "DEVOLVIDO") {
+    throw new AppError("Esta viatura já está devolvida.", "CONFLICT");
+  }
+  const statusChange = await prisma.$transaction(async (tx) => applyCommercialStatus(tx, vehicle, "DEVOLVIDO", actor));
+  await logStatusChange(vehicle.id, actor, statusChange);
+  await writeVehicleEvent({
+    vehicleId: vehicle.id,
+    type: "NOTE",
+    title: `Devolvida por ${actor.name}`,
+    actor,
+    notes: input.reason,
+  });
+  await writeAudit({
+    actor,
+    action: "MARK_RETURNED",
+    entityType: "Vehicle",
+    entityId: vehicle.id,
+    next: { reason: input.reason },
+  });
+}
+
+export async function unmarkReturned(actor: Actor, input: { vehicleId: string; reason: string }) {
+  if (!can(actor, "vehicle:change_status") && !can(actor, "vehicle:edit")) {
+    throw new AppError("Não tem permissão para anular a devolução.", "FORBIDDEN", 403);
+  }
+  const vehicle = await prisma.vehicle.findFirst({
+    where: { id: input.vehicleId, deletedAt: null },
+    include: { commercialStatus: true },
+  });
+  if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
+  if (vehicle.commercialStatus.code !== "DEVOLVIDO") {
+    throw new AppError("Esta viatura não está devolvida.", "CONFLICT");
+  }
+  const statusChange = await prisma.$transaction(async (tx) => restoreCommercialAfterSale(tx, vehicle.id, actor));
+  await logStatusChange(vehicle.id, actor, statusChange);
+  await writeVehicleEvent({
+    vehicleId: vehicle.id,
+    type: "NOTE",
+    title: `Devolução anulada por ${actor.name}`,
+    actor,
+    notes: input.reason,
+  });
+  await writeAudit({
+    actor,
+    action: "UNMARK_RETURNED",
+    entityType: "Vehicle",
+    entityId: vehicle.id,
+    next: { reason: input.reason },
+  });
+}
+
 async function findOutcomeStatus(code: string, name: string) {
   const byCode = await prisma.vehicleStatus.findUnique({ where: { code } });
   if (byCode) return byCode;
@@ -335,7 +397,7 @@ async function applyOutcomeToMismatchedSales(
   const vehicles = await prisma.vehicle.findMany({
     where: {
       deletedAt: null,
-      statusId: { not: status.id },
+      commercialStatusId: { not: status.id },
       sales: {
         some: {
           cancelledAt: null,
@@ -343,21 +405,22 @@ async function applyOutcomeToMismatchedSales(
         },
       },
     },
-    select: { id: true, statusId: true },
+    select: { id: true, commercialStatusId: true },
   });
   if (!vehicles.length) return;
   await prisma.$transaction([
     prisma.vehicleStatusHistory.createMany({
       data: vehicles.map((vehicle) => ({
         vehicleId: vehicle.id,
-        fromStatusId: vehicle.statusId,
+        kind: "commercial",
+        fromStatusId: vehicle.commercialStatusId,
         toStatusId: status.id,
         notes: delivery === "delivered" ? "Sincronização: viatura entregue" : "Sincronização: viatura vendida",
       })),
     }),
     prisma.vehicle.updateMany({
       where: { id: { in: vehicles.map((vehicle) => vehicle.id) } },
-      data: { statusId: status.id },
+      data: { commercialStatusId: status.id },
     }),
   ]);
 }

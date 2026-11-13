@@ -4,7 +4,14 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDeleteButton } from "@/components/shared/record-actions";
 import { PhotoThumb } from "@/components/vehicles/photo-thumb";
 import { VehicleStatusBadges } from "@/components/vehicles/status-badges";
-import { DeliverDialog, RevertAvailabilityButton, RevertDeliveryButton, SaleDialog } from "@/components/vehicles/sale-dialog";
+import {
+  DeliverDialog,
+  ReturnDialog,
+  RevertAvailabilityButton,
+  RevertDeliveryButton,
+  RevertReturnButton,
+  SaleDialog,
+} from "@/components/vehicles/sale-dialog";
 import { formatDate, formatDateTime, formatKm, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isSalesRole } from "@/lib/vehicle-status";
@@ -30,7 +37,9 @@ export default async function VehicleDetailPage({
   ]);
   const sold = Boolean(vehicle.activeSale);
   const delivered = Boolean(vehicle.activeSale?.actualDeliveryAt);
+  const returned = vehicle.commercialStatus.code === "DEVOLVIDO";
   const showHistory = !isSalesRole(actor.roleCode);
+  const canChangeStatus = can(actor, "vehicle:change_status");
 
   return (
     <div className="space-y-6">
@@ -81,6 +90,8 @@ export default async function VehicleDetailPage({
               {can(actor, "vehicle:mark_delivered") && sold && !delivered ? <DeliverDialog vehicleId={vehicle.id} /> : null}
               {can(actor, "vehicle:mark_delivered") && delivered ? <RevertDeliveryButton vehicleId={vehicle.id} /> : null}
               {can(actor, "vehicle:register_sale") && sold && !delivered ? <RevertAvailabilityButton vehicleId={vehicle.id} /> : null}
+              {canChangeStatus && !sold && !returned ? <ReturnDialog vehicleId={vehicle.id} /> : null}
+              {canChangeStatus && returned ? <RevertReturnButton vehicleId={vehicle.id} /> : null}
               {can(actor, "vehicle:delete") ? (
                 <ConfirmDeleteButton
                   id={vehicle.id}

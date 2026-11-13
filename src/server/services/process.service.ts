@@ -4,7 +4,7 @@ import { AppError } from "@/lib/errors";
 import { can, type Actor } from "@/server/permissions/check";
 import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 
-const BLOCKED_STATUS = new Set(["VENDIDO", "ENTREGUE", "CEDIDO", "DEVOLVIDO"]);
+const BLOCKED_COMMERCIAL = new Set(["ENTREGUE", "DEVOLVIDO"]);
 const ACTIVE_REFURB = new Set(["TO_START", "DELIVERED", "IN_PROGRESS"]);
 const ACTIVE_CLEAN = new Set(["PENDING", "IN_PROGRESS"]);
 
@@ -62,7 +62,7 @@ export async function runPreparation(actor: Actor, input: PreparationInput) {
 
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
-    include: { status: true },
+    include: { operationalStatus: true, commercialStatus: true },
   });
   if (!vehicle) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
 
@@ -80,7 +80,7 @@ export async function runPreparation(actor: Actor, input: PreparationInput) {
   return input.step === "complete" ? completeService(actor, vehicle, input) : startService(actor, vehicle, input);
 }
 
-type VehicleRow = Prisma.VehicleGetPayload<{ include: { status: true } }>;
+type VehicleRow = Prisma.VehicleGetPayload<{ include: { operationalStatus: true; commercialStatus: true } }>;
 
 async function startRefurbishment(actor: Actor, vehicle: VehicleRow, input: PreparationInput) {
   const active = await prisma.refurbishment.findFirst({
@@ -101,7 +101,7 @@ async function startRefurbishment(actor: Actor, vehicle: VehicleRow, input: Prep
       responsibleName: actor.name,
     },
   });
-  await applyStatus(actor, vehicle, "EM_RECONDICIONAMENTO");
+  await applyOperationalStatus(actor, vehicle, "EM_RECONDICIONAMENTO");
   await logProcess(actor, vehicle.id, "REFURBISHMENT_STARTED", "Enviada para recondicionamento", {
     location: site?.name ?? input.locationName ?? null,
     notes: input.notes ?? null,
@@ -123,7 +123,7 @@ async function completeRefurbishment(actor: Actor, vehicle: VehicleRow, input: P
       notes: empty(input.notes) ?? active.notes,
     },
   });
-  await applyStatus(actor, vehicle, "EM_PREPARACAO");
+  await applyOperationalStatus(actor, vehicle, "EM_PREPARACAO");
   await logProcess(actor, vehicle.id, "REFURBISHMENT_PICKED_UP", "Voltou do recondicionamento", {
     notes: input.notes ?? null,
   });
@@ -147,7 +147,7 @@ async function startCleaning(actor: Actor, vehicle: VehicleRow, input: Preparati
       responsibleName: actor.name,
     },
   });
-  await applyStatus(actor, vehicle, "AGUARDA_HIGIENIZACAO");
+  await applyOperationalStatus(actor, vehicle, "EM_HIGIENIZACAO");
   await logProcess(actor, vehicle.id, "CLEANING_STARTED", "Higienização iniciada", {
     location: site?.name ?? input.locationName ?? null,
   });
@@ -167,7 +167,7 @@ async function completeCleaning(actor: Actor, vehicle: VehicleRow, input: Prepar
       notes: empty(input.notes) ?? active.notes,
     },
   });
-  await applyStatus(actor, vehicle, "EM_PREPARACAO");
+  await applyOperationalStatus(actor, vehicle, "EM_PREPARACAO");
   await logProcess(actor, vehicle.id, "CLEANING_COMPLETED", "Higienização concluída", { notes: input.notes ?? null });
 }
 
@@ -189,7 +189,7 @@ async function startService(actor: Actor, vehicle: VehicleRow, input: Preparatio
       responsibleUserId: actor.id,
     },
   });
-  await applyStatus(actor, vehicle, "AGUARDA_REVISAO");
+  await applyOperationalStatus(actor, vehicle, "EM_REVISAO");
   await logProcess(actor, vehicle.id, "SERVICE_STARTED", "Revisão iniciada", {
     location: site?.name ?? input.locationName ?? null,
     mileage: input.mileage ?? vehicle.mileage,
@@ -210,7 +210,7 @@ async function completeService(actor: Actor, vehicle: VehicleRow, input: Prepara
       mileage: input.mileage ?? active.mileage,
     },
   });
-  await applyStatus(actor, vehicle, "EM_PREPARACAO");
+  await applyOperationalStatus(actor, vehicle, "EM_PREPARACAO");
   await logProcess(actor, vehicle.id, "SERVICE_COMPLETED", "Revisão concluída", { notes: input.notes ?? null });
 }
 
@@ -219,9 +219,6 @@ async function markPhotographed(actor: Actor, vehicle: VehicleRow) {
     where: { id: vehicle.id },
     data: { photographyStatus: "PHOTOGRAPHED", photographyUpdatedAt: new Date(), photographyUpdatedById: actor.id },
   });
-  if (vehicle.status.code !== "DISPONIVEL_PARA_VENDA" && vehicle.status.code !== "AGUARDA_PUBLICACAO") {
-    await applyStatus(actor, vehicle, "AGUARDA_PUBLICACAO");
-  }
   await writeVehicleEvent({
     vehicleId: vehicle.id,
     type: "PUBLISHING_CHANGED",
@@ -245,7 +242,7 @@ async function markPublished(actor: Actor, vehicle: VehicleRow) {
     where: { id: vehicle.id },
     data: { photographyStatus: "PUBLISHED", photographyUpdatedAt: new Date(), photographyUpdatedById: actor.id },
   });
-  await applyStatus(actor, vehicle, "DISPONIVEL_PARA_VENDA");
+  await applyCommercialStatus(actor, vehicle, "DISPONIVEL_PARA_VENDA");
   await writeVehicleEvent({
     vehicleId: vehicle.id,
     type: "PUBLISHING_CHANGED",
@@ -264,17 +261,18 @@ async function markPublished(actor: Actor, vehicle: VehicleRow) {
   });
 }
 
-async function applyStatus(actor: Actor, vehicle: VehicleRow, code: string) {
-  if (BLOCKED_STATUS.has(vehicle.status.code)) return;
-  if (vehicle.status.code === code) return;
+async function applyOperationalStatus(actor: Actor, vehicle: VehicleRow, code: string) {
+  if (BLOCKED_COMMERCIAL.has(vehicle.commercialStatus.code)) return;
+  if (vehicle.operationalStatus.code === code) return;
   if (!can(actor, "vehicle:change_status") && !can(actor, "vehicle:edit")) return;
   const status = await prisma.vehicleStatus.findUnique({ where: { code } });
-  if (!status) return;
-  await prisma.vehicle.update({ where: { id: vehicle.id }, data: { statusId: status.id } });
+  if (!status || status.category !== "operational") return;
+  await prisma.vehicle.update({ where: { id: vehicle.id }, data: { operationalStatusId: status.id } });
   await prisma.vehicleStatusHistory.create({
     data: {
       vehicleId: vehicle.id,
-      fromStatusId: vehicle.statusId,
+      kind: "operational",
+      fromStatusId: vehicle.operationalStatusId,
       toStatusId: status.id,
       changedById: actor.id,
     },
@@ -282,13 +280,46 @@ async function applyStatus(actor: Actor, vehicle: VehicleRow, code: string) {
   await writeVehicleEvent({
     vehicleId: vehicle.id,
     type: "STATUS_CHANGED",
-    title: `Estado: ${vehicle.status.name} → ${status.name}`,
+    title: `Estado operacional: ${vehicle.operationalStatus.name} → ${status.name}`,
     actor,
-    previous: { status: vehicle.status.name },
-    next: { status: status.name },
+    previous: { operationalStatus: vehicle.operationalStatus.name },
+    next: { operationalStatus: status.name },
   });
-  vehicle.statusId = status.id;
-  vehicle.status = status;
+  vehicle.operationalStatusId = status.id;
+  vehicle.operationalStatus = status;
+}
+
+async function applyCommercialStatus(actor: Actor, vehicle: VehicleRow, code: string) {
+  if (BLOCKED_COMMERCIAL.has(vehicle.commercialStatus.code)) return;
+  if (isButtonCommercial(vehicle.commercialStatus.code) && code !== vehicle.commercialStatus.code) return;
+  if (vehicle.commercialStatus.code === code) return;
+  if (!can(actor, "vehicle:change_status") && !can(actor, "vehicle:edit")) return;
+  const status = await prisma.vehicleStatus.findUnique({ where: { code } });
+  if (!status || status.category !== "commercial") return;
+  await prisma.vehicle.update({ where: { id: vehicle.id }, data: { commercialStatusId: status.id } });
+  await prisma.vehicleStatusHistory.create({
+    data: {
+      vehicleId: vehicle.id,
+      kind: "commercial",
+      fromStatusId: vehicle.commercialStatusId,
+      toStatusId: status.id,
+      changedById: actor.id,
+    },
+  });
+  await writeVehicleEvent({
+    vehicleId: vehicle.id,
+    type: "STATUS_CHANGED",
+    title: `Estado comercial: ${vehicle.commercialStatus.name} → ${status.name}`,
+    actor,
+    previous: { commercialStatus: vehicle.commercialStatus.name },
+    next: { commercialStatus: status.name },
+  });
+  vehicle.commercialStatusId = status.id;
+  vehicle.commercialStatus = status;
+}
+
+function isButtonCommercial(code: string) {
+  return code === "VENDIDO" || code === "ENTREGUE" || code === "DEVOLVIDO";
 }
 
 async function logProcess(

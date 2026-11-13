@@ -5,7 +5,8 @@ import { toNumber } from "@/lib/utils";
 import { can, type Actor } from "@/server/permissions/check";
 
 type VehicleWithRelations = Vehicle & {
-  status: VehicleStatus;
+  operationalStatus: VehicleStatus;
+  commercialStatus: VehicleStatus;
   location: Location | null;
   source: VehicleSource | null;
   photos: VehiclePhoto[];
@@ -92,7 +93,8 @@ export function mapVehicle(vehicle: VehicleWithRelations, actor: Actor, settings
     inspectionReportUrl: vehicle.inspectionReportUrl,
     transportGuideUrl: vehicle.transportGuideUrl,
     needsImportReview: vehicle.needsImportReview,
-    status: vehicle.status,
+    operationalStatus: vehicle.operationalStatus,
+    commercialStatus: vehicle.commercialStatus,
     location: vehicle.location,
     source: vehicle.source,
     primaryPhotoUrl: primaryPhoto?.url ?? null,

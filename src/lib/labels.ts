@@ -20,7 +20,6 @@ export const PROCESS_SITE_KIND_LABELS = {
 export const STATUS_CATEGORY_LABELS = {
   operational: "Operacional",
   commercial: "Comercial",
-  terminal: "Final",
 } as const;
 
 export const PHOTOGRAPHY_STATUS_LABELS: Record<string, string> = {
@@ -77,6 +76,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   MARK_DELIVERED: "Viatura entregue",
   UNMARK_DELIVERED: "Entrega anulada",
   CANCEL_SALE: "Venda anulada",
+  MARK_RETURNED: "Viatura devolvida",
+  UNMARK_RETURNED: "Devolução anulada",
   ADD_PHOTO: "Fotografia adicionada",
   SET_PRIMARY_PHOTO: "Fotografia principal definida",
   DELETE_PHOTO: "Fotografia eliminada",

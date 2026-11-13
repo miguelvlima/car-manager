@@ -8,7 +8,14 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { toDateInput } from "@/lib/format";
 import { formatMoney } from "@/lib/format";
 import type { ActionResult } from "@/lib/errors";
-import { cancelSaleAction, markDeliveredAction, registerSaleAction, unmarkDeliveredAction } from "@/server/actions";
+import {
+  cancelSaleAction,
+  markDeliveredAction,
+  markReturnedAction,
+  registerSaleAction,
+  unmarkDeliveredAction,
+  unmarkReturnedAction,
+} from "@/server/actions";
 
 export function SaleDialog({
   vehicleId,
@@ -233,6 +240,37 @@ export function RevertDeliveryButton({ vehicleId, size = "default" }: { vehicleI
   );
 }
 
+export function ReturnDialog({ vehicleId, size = "default" }: { vehicleId: string; size?: "default" | "sm" }) {
+  return (
+    <RevertActionButton
+      vehicleId={vehicleId}
+      size={size}
+      action={markReturnedAction}
+      trigger="Marcar como devolvido"
+      title="Marcar como devolvido?"
+      description="O estado comercial passa a Devolvido. O motivo fica no histórico da ficha e na auditoria. Esta é a única forma de definir Devolvido."
+      confirm="Confirmar devolução"
+      success="Viatura marcada como devolvida."
+      pendingLabel="A gravar..."
+    />
+  );
+}
+
+export function RevertReturnButton({ vehicleId, size = "default" }: { vehicleId: string; size?: "default" | "sm" }) {
+  return (
+    <RevertActionButton
+      vehicleId={vehicleId}
+      size={size}
+      action={unmarkReturnedAction}
+      trigger="Anular devolução"
+      title="Anular devolução?"
+      description="O estado comercial volta ao anterior (Disponível para venda se não houver histórico). O motivo fica no histórico e na auditoria."
+      confirm="Confirmar anulação da devolução"
+      success="Devolução anulada."
+    />
+  );
+}
+
 function RevertActionButton({
   vehicleId,
   size,
@@ -242,6 +280,7 @@ function RevertActionButton({
   description,
   confirm,
   success,
+  pendingLabel = "A anular...",
 }: {
   vehicleId: string;
   size?: "default" | "sm";
@@ -251,6 +290,7 @@ function RevertActionButton({
   description: string;
   confirm: string;
   success: string;
+  pendingLabel?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -289,7 +329,7 @@ function RevertActionButton({
                 Cancelar
               </Button>
               <Button type="submit" disabled={pending}>
-                {pending ? "A anular..." : confirm}
+                {pending ? pendingLabel : confirm}
               </Button>
             </div>
           </form>

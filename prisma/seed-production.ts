@@ -4,6 +4,28 @@ import { normalizePlate } from "../src/lib/plate";
 
 const prisma = new PrismaClient();
 
+function splitSeedStatuses(
+  byCode: Record<string, { id: string; category: string }>,
+  code: string,
+  sold?: { deliveredAt?: string },
+) {
+  const chosen = byCode[code];
+  const available = byCode.DISPONIVEL_PARA_VENDA;
+  const entering = byCode.A_ENTRAR;
+  const vendido = byCode.VENDIDO;
+  const entregue = byCode.ENTREGUE;
+  if (chosen.category === "operational") {
+    return {
+      operationalStatusId: chosen.id,
+      commercialStatusId: sold?.deliveredAt ? entregue.id : sold ? vendido.id : available.id,
+    };
+  }
+  return {
+    operationalStatusId: entering.id,
+    commercialStatusId: chosen.id,
+  };
+}
+
 const VEHICLES: Array<{
   make: string;
   model: string;
@@ -257,7 +279,7 @@ async function main() {
         salePrice: item.salePrice,
         acquisitionPrice: item.acquisitionPrice,
         entryDate: new Date(item.entryDate),
-        statusId: statuses[item.status].id,
+        ...splitSeedStatuses(statuses, item.status, item.sold),
         locationId: item.location ? locations[item.location].id : null,
         sourceId: item.source ? sources[item.source].id : null,
         photographyStatus: item.photographyStatus ?? "NOT_PHOTOGRAPHED",
@@ -275,13 +297,23 @@ async function main() {
         occurredAt: new Date(item.entryDate),
       },
     });
-    await prisma.vehicleStatusHistory.create({
-      data: {
-        vehicleId: created.id,
-        toStatusId: created.statusId,
-        changedById: admin.id,
-        changedAt: new Date(item.entryDate),
-      },
+    await prisma.vehicleStatusHistory.createMany({
+      data: [
+        {
+          vehicleId: created.id,
+          kind: "operational",
+          toStatusId: created.operationalStatusId,
+          changedById: admin.id,
+          changedAt: new Date(item.entryDate),
+        },
+        {
+          vehicleId: created.id,
+          kind: "commercial",
+          toStatusId: created.commercialStatusId,
+          changedById: admin.id,
+          changedAt: new Date(item.entryDate),
+        },
+      ],
     });
     if (created.locationId) {
       await prisma.vehicleLocationHistory.create({

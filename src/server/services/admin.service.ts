@@ -354,7 +354,7 @@ export async function listStatuses(query: CatalogListQuery) {
       ...(isActive === undefined ? {} : { isActive }),
     },
     orderBy: { sortOrder: "asc" },
-    include: { _count: { select: { vehicles: true } } },
+    include: { _count: { select: { operationalVehicles: true, commercialVehicles: true } } },
   });
   return { items, total: items.length };
 }
@@ -580,7 +580,7 @@ export async function deleteSource(actor: Actor, id: string) {
 export async function deleteStatus(actor: Actor, id: string) {
   const status = await getStatus(id);
   const [vehicles, historyFrom, historyTo, transitions] = await Promise.all([
-    prisma.vehicle.count({ where: { statusId: id } }),
+    prisma.vehicle.count({ where: { OR: [{ operationalStatusId: id }, { commercialStatusId: id }] } }),
     prisma.vehicleStatusHistory.count({ where: { fromStatusId: id } }),
     prisma.vehicleStatusHistory.count({ where: { toStatusId: id } }),
     prisma.vehicleStatusTransition.count({ where: { OR: [{ fromStatusId: id }, { toStatusId: id }] } }),

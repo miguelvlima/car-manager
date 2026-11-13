@@ -135,7 +135,8 @@ model VehicleStatus {
   filterSelectedByDefault Boolean                  @default(true)
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
-  vehicles             Vehicle[]
+  operationalVehicles  Vehicle[]                 @relation("OperationalStatus")
+  commercialVehicles   Vehicle[]                 @relation("CommercialStatus")
   fromTransitions      VehicleStatusTransition[] @relation("TransitionFrom")
   toTransitions        VehicleStatusTransition[] @relation("TransitionTo")
   statusHistoryFrom    VehicleStatusHistory[]    @relation("StatusFrom")
@@ -200,8 +201,10 @@ model Vehicle {
 
   sourceId               String?
   source                 VehicleSource?          @relation(fields: [sourceId], references: [id])
-  statusId               String
-  status                 VehicleStatus           @relation(fields: [statusId], references: [id])
+  operationalStatusId    String
+  operationalStatus      VehicleStatus           @relation("OperationalStatus", fields: [operationalStatusId], references: [id])
+  commercialStatusId     String
+  commercialStatus       VehicleStatus           @relation("CommercialStatus", fields: [commercialStatusId], references: [id])
   locationId             String?
   location               Location?               @relation("CurrentLocation", fields: [locationId], references: [id])
   siteId                 String?
@@ -227,7 +230,8 @@ model Vehicle {
 
   @@index([licensePlateNormalized])
   @@index([vin])
-  @@index([statusId])
+  @@index([operationalStatusId])
+  @@index([commercialStatusId])
   @@index([locationId])
   @@index([sourceId])
   @@index([entryDate])
@@ -341,9 +345,10 @@ model VehicleLocationHistory {
 }
 
 model VehicleStatusHistory {
-  id          String         @id @default(cuid())
-  vehicleId   String
-  vehicle     Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  id           String         @id @default(cuid())
+  vehicleId    String
+  vehicle      Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  kind         String         @default("operational")
   fromStatusId String?
   toStatusId   String
   fromStatus   VehicleStatus? @relation("StatusFrom", fields: [fromStatusId], references: [id])

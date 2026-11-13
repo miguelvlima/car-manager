@@ -8,10 +8,11 @@ import { getStockSettings } from "@/server/services/settings.service";
 import { ensureSaleCatalogStatusesSynced } from "@/server/services/sale.service";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
 import { sanitizeVehiclePatch, type VehicleWritableFields } from "@/server/services/vehicle-sanitize";
-import { isSaleOutcomeStatus, isSalesRole, STATUS_FILTER_NONE, type VehicleListSort } from "@/lib/vehicle-status";
+import { isButtonCommercialStatus, isSalesRole, STATUS_FILTER_NONE, type VehicleListSort } from "@/lib/vehicle-status";
 
 const vehicleInclude = {
-  status: true,
+  operationalStatus: true,
+  commercialStatus: true,
   location: true,
   source: true,
   photos: { where: { deletedAt: null }, orderBy: [{ isPrimary: "desc" as const }, { sortOrder: "asc" as const }] },
@@ -27,7 +28,8 @@ export type VehicleListQuery = {
   make?: string;
   model?: string;
   version?: string;
-  statusId?: string | string[];
+  operationalStatusId?: string | string[];
+  commercialStatusId?: string | string[];
   locationId?: string;
   sourceId?: string;
   photographyStatus?: PhotographyStatus;
@@ -81,24 +83,21 @@ function parseStatusIds(value?: string | string[]) {
   return [...new Set(parts.map((item) => item.trim()).filter((item) => item && item !== STATUS_FILTER_NONE))];
 }
 
-function whereForCatalogStatus(status: { id: string; code: string }): Prisma.VehicleWhereInput {
-  if (status.code === "ENTREGUE") {
-    return {
-      OR: [
-        { statusId: status.id },
-        { sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } } },
-      ],
-    };
-  }
-  if (status.code === "VENDIDO") {
-    return {
-      OR: [
-        { statusId: status.id },
-        { sales: { some: { cancelledAt: null, actualDeliveryAt: null } } },
-      ],
-    };
-  }
-  return { statusId: status.id };
+function selectedStatusFilter(
+  queryValue: string | string[] | undefined,
+  statuses: Array<{ id: string; code: string; category: string; filterSelectedByDefault: boolean }>,
+  category: "operational" | "commercial",
+  applyDefault: boolean | undefined,
+) {
+  const inCategory = statuses.filter((status) => status.category === category);
+  const explicit = queryValue != null && String(queryValue).length > 0;
+  const ids = parseStatusIds(queryValue);
+  const selected = explicit
+    ? inCategory.filter((status) => ids.includes(status.id))
+    : applyDefault
+      ? inCategory.filter((status) => status.filterSelectedByDefault)
+      : [];
+  return { explicit, selected };
 }
 
 export async function listVehicles(actor: Actor, query: VehicleListQuery) {
@@ -110,26 +109,38 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
   const sourceId = query.sourceId?.trim() || undefined;
   const catalogStatuses = await prisma.vehicleStatus.findMany({
     where: { isActive: true },
-    select: { id: true, code: true, filterSelectedByDefault: true },
+    select: { id: true, code: true, category: true, filterSelectedByDefault: true },
     orderBy: { sortOrder: "asc" },
   });
-  const explicitStatusFilter = query.statusId != null && String(query.statusId).length > 0;
-  const statusIds = parseStatusIds(query.statusId);
-  const selectedStatuses = explicitStatusFilter
-    ? catalogStatuses.filter((status) => statusIds.includes(status.id))
-    : query.applyDefaultStatusFilter
-      ? catalogStatuses.filter((status) => status.filterSelectedByDefault)
-      : [];
-  const includeDelivered = selectedStatuses.some((status) => status.code === "ENTREGUE");
+  const operationalFilter = selectedStatusFilter(
+    query.operationalStatusId,
+    catalogStatuses,
+    "operational",
+    query.applyDefaultStatusFilter,
+  );
+  const commercialFilter = selectedStatusFilter(
+    query.commercialStatusId,
+    catalogStatuses,
+    "commercial",
+    query.applyDefaultStatusFilter,
+  );
+  const includeDelivered = commercialFilter.selected.some(
+    (status) => status.code === "ENTREGUE" || status.code === "DEVOLVIDO",
+  );
   const hideDelivered = query.availableOnly || query.catalog || query.inStock || !includeDelivered;
   const clauses: Prisma.VehicleWhereInput[] = [
     { deletedAt: null },
     ...(query.make ? [{ make: { equals: query.make, mode: "insensitive" as const } }] : []),
     ...(query.model ? [{ model: { equals: query.model, mode: "insensitive" as const } }] : []),
     ...(query.version ? [{ version: { equals: query.version, mode: "insensitive" as const } }] : []),
-    ...(selectedStatuses.length
-      ? [{ OR: selectedStatuses.map(whereForCatalogStatus) }]
-      : explicitStatusFilter
+    ...(operationalFilter.selected.length
+      ? [{ operationalStatusId: { in: operationalFilter.selected.map((status) => status.id) } }]
+      : operationalFilter.explicit
+        ? [{ id: { in: ["__no_status__"] } }]
+        : []),
+    ...(commercialFilter.selected.length
+      ? [{ commercialStatusId: { in: commercialFilter.selected.map((status) => status.id) } }]
+      : commercialFilter.explicit
         ? [{ id: { in: ["__no_status__"] } }]
         : []),
     ...(query.locationId ? [{ locationId: query.locationId }] : []),
@@ -147,7 +158,7 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
           {
             AND: [
               { NOT: { sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } } } },
-              { status: { code: { not: "ENTREGUE" } } },
+              { commercialStatus: { code: { notIn: ["ENTREGUE", "DEVOLVIDO"] } } },
             ],
           },
         ]
@@ -208,9 +219,19 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
       case "location_desc":
         return (b.location?.name ?? "").localeCompare(a.location?.name ?? "", "pt");
       case "status_asc":
-        return a.status.name.localeCompare(b.status.name, "pt");
+      case "operational_asc":
+        return a.operationalStatus.name.localeCompare(b.operationalStatus.name, "pt")
+          || a.commercialStatus.name.localeCompare(b.commercialStatus.name, "pt");
       case "status_desc":
-        return b.status.name.localeCompare(a.status.name, "pt");
+      case "operational_desc":
+        return b.operationalStatus.name.localeCompare(a.operationalStatus.name, "pt")
+          || b.commercialStatus.name.localeCompare(a.commercialStatus.name, "pt");
+      case "commercial_asc":
+        return a.commercialStatus.name.localeCompare(b.commercialStatus.name, "pt")
+          || a.operationalStatus.name.localeCompare(b.operationalStatus.name, "pt");
+      case "commercial_desc":
+        return b.commercialStatus.name.localeCompare(a.commercialStatus.name, "pt")
+          || b.operationalStatus.name.localeCompare(a.operationalStatus.name, "pt");
       case "entry_asc":
         return a.entryDate.getTime() - b.entryDate.getTime();
       case "entry_desc":
@@ -262,9 +283,11 @@ export async function createVehicle(actor: Actor, input: VehicleWritableFields) 
   }
   const sanitized = sanitizeVehiclePatch(input, actor.roleCode, actor.permissions);
   const plate = normalizePlate(sanitized.licensePlate ?? null);
-  const entering = await prisma.vehicleStatus.findUnique({ where: { code: "A_ENTRAR" } });
-  const statusId = entering?.id;
-  if (!statusId || !sanitized.make || !sanitized.model || !sanitized.entryDate) {
+  const [entering, available] = await Promise.all([
+    prisma.vehicleStatus.findUnique({ where: { code: "A_ENTRAR" } }),
+    prisma.vehicleStatus.findUnique({ where: { code: "DISPONIVEL_PARA_VENDA" } }),
+  ]);
+  if (!entering || !available || !sanitized.make || !sanitized.model || !sanitized.entryDate) {
     throw new AppError("Dados obrigatórios em falta.", "VALIDATION");
   }
 
@@ -295,7 +318,8 @@ export async function createVehicle(actor: Actor, input: VehicleWritableFields) 
       passport: sanitized.passport ?? null,
       numberOfKeys: sanitized.numberOfKeys ?? null,
       sourceId: emptyToNull(sanitized.sourceId),
-      statusId,
+      operationalStatusId: entering.id,
+      commercialStatusId: available.id,
       locationId: emptyToNull(sanitized.locationId),
       commercialSupport: Boolean(sanitized.commercialSupport),
       commercialSupportAmount: toDecimal(sanitized.commercialSupportAmount),
@@ -320,8 +344,11 @@ export async function createVehicle(actor: Actor, input: VehicleWritableFields) 
     actor,
     next: { make: vehicle.make, model: vehicle.model, licensePlate: vehicle.licensePlate },
   });
-  await prisma.vehicleStatusHistory.create({
-    data: { vehicleId: vehicle.id, toStatusId: vehicle.statusId, changedById: actor.id },
+  await prisma.vehicleStatusHistory.createMany({
+    data: [
+      { vehicleId: vehicle.id, kind: "operational", toStatusId: vehicle.operationalStatusId, changedById: actor.id },
+      { vehicleId: vehicle.id, kind: "commercial", toStatusId: vehicle.commercialStatusId, changedById: actor.id },
+    ],
   });
   if (vehicle.locationId) {
     await prisma.vehicleLocationHistory.create({
@@ -351,20 +378,33 @@ export async function updateVehicle(actor: Actor, id: string, input: VehicleWrit
   }
   const existing = await prisma.vehicle.findFirst({
     where: { id, deletedAt: null },
-    include: { status: true, location: true, sales: { where: { cancelledAt: null }, select: { id: true } } },
+    include: {
+      operationalStatus: true,
+      commercialStatus: true,
+      location: true,
+      sales: { where: { cancelledAt: null }, select: { id: true } },
+    },
   });
   if (!existing) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
 
   const sanitized = sanitizeVehiclePatch(input, actor.roleCode, actor.permissions);
-  if (sanitized.statusId && sanitized.statusId !== existing.statusId) {
-    const nextStatus = await prisma.vehicleStatus.findUnique({ where: { id: sanitized.statusId } });
-    if (!nextStatus) throw new AppError("Estado inválido.", "VALIDATION");
-    if (isSaleOutcomeStatus(nextStatus.code)) {
-      throw new AppError("Vendido e Entregue só se definem na ficha, ao marcar a venda ou a entrega.", "CONFLICT");
+  if (sanitized.operationalStatusId && sanitized.operationalStatusId !== existing.operationalStatusId) {
+    const nextStatus = await prisma.vehicleStatus.findUnique({ where: { id: sanitized.operationalStatusId } });
+    if (!nextStatus || nextStatus.category !== "operational") {
+      throw new AppError("Estado operacional inválido.", "VALIDATION");
     }
-    if (existing.sales.length) {
+  }
+  if (sanitized.commercialStatusId && sanitized.commercialStatusId !== existing.commercialStatusId) {
+    const nextStatus = await prisma.vehicleStatus.findUnique({ where: { id: sanitized.commercialStatusId } });
+    if (!nextStatus || nextStatus.category !== "commercial") {
+      throw new AppError("Estado comercial inválido.", "VALIDATION");
+    }
+    if (isButtonCommercialStatus(nextStatus.code)) {
+      throw new AppError("Vendido, Entregue e Devolvido só se definem pelos botões da ficha.", "CONFLICT");
+    }
+    if (existing.sales.length || isButtonCommercialStatus(existing.commercialStatus.code)) {
       throw new AppError(
-        "Enquanto a viatura estiver vendida ou entregue, o estado só muda na ficha, com Anular entrega ou Anular venda.",
+        "Enquanto a viatura estiver vendida, entregue ou devolvida, o estado comercial só muda pelos botões da ficha.",
         "CONFLICT",
       );
     }
@@ -421,8 +461,11 @@ export async function updateVehicle(actor: Actor, id: string, input: VehicleWrit
     data.salePrice = toDecimal(sanitized.salePrice);
     data.priceChangedAt = new Date();
   }
-  if (sanitized.statusId && sanitized.statusId !== existing.statusId) {
-    data.status = { connect: { id: sanitized.statusId } };
+  if (sanitized.operationalStatusId && sanitized.operationalStatusId !== existing.operationalStatusId) {
+    data.operationalStatus = { connect: { id: sanitized.operationalStatusId } };
+  }
+  if (sanitized.commercialStatusId && sanitized.commercialStatusId !== existing.commercialStatusId) {
+    data.commercialStatus = { connect: { id: sanitized.commercialStatusId } };
   }
   if (sanitized.locationId !== undefined && sanitized.locationId !== existing.locationId) {
     data.location = sanitized.locationId
@@ -436,22 +479,42 @@ export async function updateVehicle(actor: Actor, id: string, input: VehicleWrit
     include: vehicleInclude,
   });
 
-  if (sanitized.statusId && sanitized.statusId !== existing.statusId) {
+  if (sanitized.operationalStatusId && sanitized.operationalStatusId !== existing.operationalStatusId) {
     await prisma.vehicleStatusHistory.create({
       data: {
         vehicleId: id,
-        fromStatusId: existing.statusId,
-        toStatusId: sanitized.statusId,
+        kind: "operational",
+        fromStatusId: existing.operationalStatusId,
+        toStatusId: sanitized.operationalStatusId,
         changedById: actor.id,
       },
     });
     await writeVehicleEvent({
       vehicleId: id,
       type: "STATUS_CHANGED",
-      title: `Estado alterado: ${existing.status.name} → ${updated.status.name}`,
+      title: `Estado operacional: ${existing.operationalStatus.name} → ${updated.operationalStatus.name}`,
       actor,
-      previous: { status: existing.status.name },
-      next: { status: updated.status.name },
+      previous: { operationalStatus: existing.operationalStatus.name },
+      next: { operationalStatus: updated.operationalStatus.name },
+    });
+  }
+  if (sanitized.commercialStatusId && sanitized.commercialStatusId !== existing.commercialStatusId) {
+    await prisma.vehicleStatusHistory.create({
+      data: {
+        vehicleId: id,
+        kind: "commercial",
+        fromStatusId: existing.commercialStatusId,
+        toStatusId: sanitized.commercialStatusId,
+        changedById: actor.id,
+      },
+    });
+    await writeVehicleEvent({
+      vehicleId: id,
+      type: "STATUS_CHANGED",
+      title: `Estado comercial: ${existing.commercialStatus.name} → ${updated.commercialStatus.name}`,
+      actor,
+      previous: { commercialStatus: existing.commercialStatus.name },
+      next: { commercialStatus: updated.commercialStatus.name },
     });
   }
 
@@ -505,8 +568,16 @@ export async function updateVehicle(actor: Actor, id: string, input: VehicleWrit
     action: "UPDATE_VEHICLE",
     entityType: "Vehicle",
     entityId: id,
-    previous: { statusId: existing.statusId, locationId: existing.locationId },
-    next: { statusId: updated.statusId, locationId: updated.locationId },
+    previous: {
+      operationalStatusId: existing.operationalStatusId,
+      commercialStatusId: existing.commercialStatusId,
+      locationId: existing.locationId,
+    },
+    next: {
+      operationalStatusId: updated.operationalStatusId,
+      commercialStatusId: updated.commercialStatusId,
+      locationId: updated.locationId,
+    },
   });
 
   const settings = await getStockSettings();
@@ -530,7 +601,8 @@ export async function deleteVehicle(actor: Actor, id: string) {
       make: existing.make,
       model: existing.model,
       licensePlate: existing.licensePlate,
-      statusId: existing.statusId,
+      operationalStatusId: existing.operationalStatusId,
+      commercialStatusId: existing.commercialStatusId,
       locationId: existing.locationId,
       sourceId: existing.sourceId,
       salePrice: existing.salePrice?.toString() ?? null,
@@ -642,7 +714,9 @@ export async function searchGlobal(actor: Actor, q: string) {
   return result.items.map((item) => ({
     id: item.id,
     title: `${item.make} ${item.model}`,
-    subtitle: [item.version, item.licensePlateDisplay, item.status.name].filter(Boolean).join(" · "),
+    subtitle: [item.version, item.licensePlateDisplay, item.operationalStatus.name, item.commercialStatus.name]
+      .filter(Boolean)
+      .join(" · "),
     href: `/vehicles/${item.id}`,
   }));
 }

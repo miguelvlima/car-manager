@@ -66,7 +66,7 @@ export default async function StatusesSettingsPage({
                 <td className="px-4 py-3">
                   {STATUS_CATEGORY_LABELS[item.category as keyof typeof STATUS_CATEGORY_LABELS] ?? item.category}
                 </td>
-                <td className="px-4 py-3">{item._count.vehicles}</td>
+                <td className="px-4 py-3">{item._count.operationalVehicles + item._count.commercialVehicles}</td>
                 <td className="px-4 py-3">
                   {item.filterSelectedByDefault ? "Marcado" : "Desmarcado"}
                 </td>

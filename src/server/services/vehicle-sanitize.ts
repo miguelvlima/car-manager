@@ -24,7 +24,8 @@ export type VehicleWritableFields = {
   passport?: boolean | null;
   numberOfKeys?: number | null;
   sourceId?: string | null;
-  statusId?: string;
+  operationalStatusId?: string;
+  commercialStatusId?: string;
   locationId?: string | null;
   commercialSupport?: boolean;
   commercialSupportAmount?: number | null;
@@ -74,7 +75,8 @@ export function sanitizeVehiclePatch(
   delete next.preparationCost;
 
   if (!can("vehicle:change_status")) {
-    delete next.statusId;
+    delete next.operationalStatusId;
+    delete next.commercialStatusId;
   }
 
   if (!can("vehicle:change_location")) {

@@ -14,20 +14,21 @@ const DEFAULT_ROLES = [
 
 const DEFAULT_STATUSES = [
   ["A_ENTRAR", "A entrar", "slate", "operational", false],
+  ["AGUARDA_HIGIENIZACAO", "Aguarda higienização", "yellow", "operational", false],
+  ["EM_HIGIENIZACAO", "Em higienização", "yellow", "operational", false],
+  ["AGUARDA_REVISAO", "Aguarda revisão", "yellow", "operational", false],
+  ["EM_REVISAO", "Em revisão", "yellow", "operational", false],
+  ["AGUARDA_PREPARACAO", "Aguarda preparação", "yellow", "operational", false],
   ["EM_PREPARACAO", "Em preparação", "yellow", "operational", false],
   ["AGUARDA_RECONDICIONAMENTO", "Aguarda recondicionamento", "orange", "operational", false],
   ["EM_RECONDICIONAMENTO", "Em recondicionamento", "orange", "operational", false],
-  ["AGUARDA_HIGIENIZACAO", "Aguarda higienização", "yellow", "operational", false],
-  ["AGUARDA_REVISAO", "Aguarda revisão", "yellow", "operational", false],
-  ["PRONTO_PARA_FOTOGRAFAR", "Pronto para fotografar", "yellow", "operational", false],
-  ["AGUARDA_PUBLICACAO", "Aguarda publicação", "yellow", "operational", false],
+  ["AGUARDA_ENTREGA", "Aguarda entrega", "blue", "operational", false],
   ["DISPONIVEL_PARA_VENDA", "Disponível para venda", "green", "commercial", true],
   ["RESERVADO", "Reservado", "orange", "commercial", false],
   ["VENDIDO", "Vendido", "blue", "commercial", false],
-  ["AGUARDA_ENTREGA", "Aguarda entrega", "blue", "commercial", false],
-  ["ENTREGUE", "Entregue", "slate", "terminal", false],
-  ["CEDIDO", "Cedido", "slate", "terminal", false],
-  ["DEVOLVIDO", "Devolvido", "red", "terminal", false],
+  ["ENTREGUE", "Entregue", "slate", "commercial", false],
+  ["CEDIDO", "Cedido", "slate", "commercial", false],
+  ["DEVOLVIDO", "Devolvido", "red", "commercial", false],
 ] as const;
 
 export async function bootstrapCatalog() {
@@ -75,14 +76,21 @@ export async function bootstrapCatalog() {
   for (const [index, [code, name, color, category, isAvailableForSale]] of DEFAULT_STATUSES.entries()) {
     await prisma.vehicleStatus.upsert({
       where: { code },
-      update: {},
+      update: {
+        name,
+        color,
+        category,
+        isAvailableForSale,
+        filterSelectedByDefault: code !== "ENTREGUE" && code !== "DEVOLVIDO",
+        sortOrder: index,
+      },
       create: {
         code,
         name,
         color,
         category,
         isAvailableForSale,
-        filterSelectedByDefault: code !== "ENTREGUE",
+        filterSelectedByDefault: code !== "ENTREGUE" && code !== "DEVOLVIDO",
         sortOrder: index,
       },
     });

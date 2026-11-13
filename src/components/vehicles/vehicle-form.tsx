@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { toDateInput } from "@/lib/format";
 import { uploadVehiclePhotos } from "@/lib/photos/upload-vehicle-photos";
-import { operationalStatuses } from "@/lib/vehicle-status";
+import { dropdownCommercialStatuses, isButtonCommercialStatus, statusesByCategory } from "@/lib/vehicle-status";
 import { createVehicleAction, updateVehicleAction } from "@/server/actions";
 import type { VehicleDTO } from "@/server/services/vehicle-mapper";
 
@@ -31,8 +31,17 @@ export function VehicleForm({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
-  const statuses = operationalStatuses(lookups.statuses, vehicle?.status.code);
-  const saleLocked = Boolean(vehicle?.activeSale);
+  const operationalOptions = withCurrent(
+    statusesByCategory(lookups.statuses, "operational"),
+    vehicle?.operationalStatus,
+  );
+  const commercialOptions = withCurrent(
+    dropdownCommercialStatuses(lookups.statuses),
+    vehicle && !isButtonCommercialStatus(vehicle.commercialStatus.code) ? vehicle.commercialStatus : undefined,
+  );
+  const commercialLocked = Boolean(
+    vehicle && (vehicle.activeSale || isButtonCommercialStatus(vehicle.commercialStatus.code)),
+  );
 
   async function onSubmit(formData: FormData) {
     setPending(true);
@@ -105,33 +114,54 @@ export function VehicleForm({
           </Select>
         </div>
         {vehicle ? (
-          <div>
-            <Label>Estado</Label>
-            {saleLocked ? (
-              <>
-                <Input value={vehicle.status.name} disabled />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {vehicle.activeSale?.actualDeliveryAt
-                    ? "Entregue não se altera aqui. Na ficha, use Anular entrega — a viatura volta a Vendido."
-                    : "Vendido não se altera aqui. Na ficha, use Anular venda. Depois de entregue, só com Anular entrega."}
-                </p>
-              </>
-            ) : (
-              <Select name="statusId" defaultValue={vehicle.status.id} required>
-                {statuses.map((item) => (
+          <>
+            <div>
+              <Label>Estado operacional</Label>
+              <Select name="operationalStatusId" defaultValue={vehicle.operationalStatus.id} required>
+                {operationalOptions.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
               </Select>
-            )}
-          </div>
+            </div>
+            <div>
+              <Label>Estado comercial</Label>
+              {commercialLocked ? (
+                <>
+                  <Input value={vehicle.commercialStatus.name} disabled />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {vehicle.commercialStatus.code === "ENTREGUE"
+                      ? "Entregue não se altera aqui. Na ficha, use Anular entrega — a viatura volta a Vendido."
+                      : vehicle.commercialStatus.code === "DEVOLVIDO"
+                        ? "Devolvido não se altera aqui. Na ficha, use Anular devolução."
+                        : "Vendido não se altera aqui. Na ficha, use Anular venda. Depois de entregue, só com Anular entrega."}
+                  </p>
+                </>
+              ) : (
+                <Select name="commercialStatusId" defaultValue={vehicle.commercialStatus.id} required>
+                  {commercialOptions.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+          </>
         ) : (
-          <div>
-            <Label>Estado</Label>
-            <Input value="A entrar" disabled />
-            <p className="mt-1 text-xs text-muted-foreground">As novas viaturas entram sempre neste estado.</p>
-          </div>
+          <>
+            <div>
+              <Label>Estado operacional</Label>
+              <Input value="A entrar" disabled />
+              <p className="mt-1 text-xs text-muted-foreground">As novas viaturas entram sempre neste estado.</p>
+            </div>
+            <div>
+              <Label>Estado comercial</Label>
+              <Input value="Disponível para venda" disabled />
+              <p className="mt-1 text-xs text-muted-foreground">As novas viaturas ficam disponíveis para venda.</p>
+            </div>
+          </>
         )}
         <div>
           <Label>Localização</Label>
@@ -214,4 +244,10 @@ function Field({
       <Input name={name} type={type} step={step} defaultValue={defaultValue ?? ""} required={required} disabled={disabled} placeholder={placeholder} />
     </div>
   );
+}
+
+function withCurrent<T extends { id: string }>(list: T[], current?: T) {
+  if (!current) return list;
+  if (list.some((item) => item.id === current.id)) return list;
+  return [current, ...list];
 }

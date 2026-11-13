@@ -6,6 +6,28 @@ import { normalizePlate } from "../src/lib/plate";
 
 const prisma = new PrismaClient();
 
+function splitSeedStatuses(
+  byCode: Record<string, { id: string; category: string }>,
+  code: string,
+  sold?: { deliveredAt?: string },
+) {
+  const chosen = byCode[code];
+  const available = byCode.DISPONIVEL_PARA_VENDA;
+  const entering = byCode.A_ENTRAR;
+  const vendido = byCode.VENDIDO;
+  const entregue = byCode.ENTREGUE;
+  if (chosen.category === "operational") {
+    return {
+      operationalStatusId: chosen.id,
+      commercialStatusId: sold?.deliveredAt ? entregue.id : sold ? vendido.id : available.id,
+    };
+  }
+  return {
+    operationalStatusId: entering.id,
+    commercialStatusId: chosen.id,
+  };
+}
+
 async function main() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("O seed de demonstração não corre em produção. Use prisma/bootstrap.ts.");
@@ -85,20 +107,21 @@ async function main() {
   const statuses = await Promise.all(
     ([
       ["A_ENTRAR", "A entrar", "slate", "operational", false],
+      ["AGUARDA_HIGIENIZACAO", "Aguarda higienização", "yellow", "operational", false],
+      ["EM_HIGIENIZACAO", "Em higienização", "yellow", "operational", false],
+      ["AGUARDA_REVISAO", "Aguarda revisão", "yellow", "operational", false],
+      ["EM_REVISAO", "Em revisão", "yellow", "operational", false],
+      ["AGUARDA_PREPARACAO", "Aguarda preparação", "yellow", "operational", false],
       ["EM_PREPARACAO", "Em preparação", "yellow", "operational", false],
       ["AGUARDA_RECONDICIONAMENTO", "Aguarda recondicionamento", "orange", "operational", false],
       ["EM_RECONDICIONAMENTO", "Em recondicionamento", "orange", "operational", false],
-      ["AGUARDA_HIGIENIZACAO", "Aguarda higienização", "yellow", "operational", false],
-      ["AGUARDA_REVISAO", "Aguarda revisão", "yellow", "operational", false],
-      ["PRONTO_PARA_FOTOGRAFAR", "Pronto para fotografar", "yellow", "operational", false],
-      ["AGUARDA_PUBLICACAO", "Aguarda publicação", "yellow", "operational", false],
+      ["AGUARDA_ENTREGA", "Aguarda entrega", "blue", "operational", false],
       ["DISPONIVEL_PARA_VENDA", "Disponível para venda", "green", "commercial", true],
       ["RESERVADO", "Reservado", "orange", "commercial", false],
       ["VENDIDO", "Vendido", "blue", "commercial", false],
-      ["AGUARDA_ENTREGA", "Aguarda entrega", "blue", "commercial", false],
-      ["ENTREGUE", "Entregue", "slate", "terminal", false],
-      ["CEDIDO", "Cedido", "slate", "terminal", false],
-      ["DEVOLVIDO", "Devolvido", "red", "terminal", false],
+      ["ENTREGUE", "Entregue", "slate", "commercial", false],
+      ["CEDIDO", "Cedido", "slate", "commercial", false],
+      ["DEVOLVIDO", "Devolvido", "red", "commercial", false],
     ] as const).map(([code, name, color, category, isAvailableForSale], index) =>
       prisma.vehicleStatus.create({
         data: {
@@ -107,7 +130,7 @@ async function main() {
           color,
           category,
           isAvailableForSale: Boolean(isAvailableForSale),
-          filterSelectedByDefault: code !== "ENTREGUE",
+          filterSelectedByDefault: code !== "ENTREGUE" && code !== "DEVOLVIDO",
           sortOrder: index,
         },
       }),
@@ -523,7 +546,7 @@ async function main() {
         acquisitionPrice: item.acquisitionPrice,
         entryDate: new Date(item.entryDate),
         renewal: Boolean(item.renewal),
-        statusId: statusByCode[item.status].id,
+        ...splitSeedStatuses(statusByCode, item.status, item.sold),
         locationId: item.location ? locationByName[item.location].id : null,
         sourceId: item.source ? sourceByCode[item.source].id : null,
         photographyStatus: item.photographyStatus ?? "NOT_PHOTOGRAPHED",
@@ -549,13 +572,23 @@ async function main() {
         occurredAt: new Date(item.entryDate),
       },
     });
-    await prisma.vehicleStatusHistory.create({
-      data: {
-        vehicleId: created.id,
-        toStatusId: created.statusId,
-        changedById: userByEmail["gestor@lima.local"].id,
-        changedAt: new Date(item.entryDate),
-      },
+    await prisma.vehicleStatusHistory.createMany({
+      data: [
+        {
+          vehicleId: created.id,
+          kind: "operational",
+          toStatusId: created.operationalStatusId,
+          changedById: userByEmail["gestor@lima.local"].id,
+          changedAt: new Date(item.entryDate),
+        },
+        {
+          vehicleId: created.id,
+          kind: "commercial",
+          toStatusId: created.commercialStatusId,
+          changedById: userByEmail["gestor@lima.local"].id,
+          changedAt: new Date(item.entryDate),
+        },
+      ],
     });
     if (created.locationId) {
       await prisma.vehicleLocationHistory.create({

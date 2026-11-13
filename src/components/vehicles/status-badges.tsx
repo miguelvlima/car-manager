@@ -4,8 +4,18 @@ export function VehicleStatusBadges({
   vehicle,
 }: {
   vehicle: {
-    status: { name: string; color: string };
+    operationalStatus?: { name: string; color: string } | null;
+    commercialStatus?: { name: string; color: string } | null;
   };
 }) {
-  return <Badge tone={vehicle.status.color}>{vehicle.status.name}</Badge>;
+  return (
+    <>
+      {vehicle.operationalStatus ? (
+        <Badge tone={vehicle.operationalStatus.color}>{vehicle.operationalStatus.name}</Badge>
+      ) : null}
+      {vehicle.commercialStatus ? (
+        <Badge tone={vehicle.commercialStatus.color}>{vehicle.commercialStatus.name}</Badge>
+      ) : null}
+    </>
+  );
 }

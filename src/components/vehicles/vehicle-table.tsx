@@ -2,8 +2,8 @@ import Link from "next/link";
 import { RowActions } from "@/components/shared/record-actions";
 import { LiveFilterForm } from "@/components/shared/live-filters";
 import { STATUS_FILTER_NONE } from "@/lib/vehicle-status";
+import { Badge } from "@/components/ui/badge";
 import { PhotoThumb } from "@/components/vehicles/photo-thumb";
-import { VehicleStatusBadges } from "@/components/vehicles/status-badges";
 import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteVehicleAction } from "@/server/actions";
@@ -64,7 +64,7 @@ export function VehicleTable({
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-card">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[960px] text-sm">
+        <table className="w-full min-w-[1080px] text-sm">
           <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Foto</th>
@@ -78,7 +78,10 @@ export function VehicleTable({
                 <SortLink label="Localização" field="location" query={query} current={sort} />
               </th>
               <th className="px-4 py-3">
-                <SortLink label="Estado" field="status" query={query} current={sort} />
+                <SortLink label="Operacional" field="operational" query={query} current={sort} />
+              </th>
+              <th className="px-4 py-3">
+                <SortLink label="Comercial" field="commercial" query={query} current={sort} />
               </th>
               <th className="px-4 py-3">
                 <SortLink label="Dias" field="days" query={query} current={sort} />
@@ -111,9 +114,10 @@ export function VehicleTable({
                 <td className="px-4 py-3">{vehicle.licensePlateDisplay}</td>
                 <td className="px-4 py-3">{vehicle.location?.name ?? "—"}</td>
                 <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    <VehicleStatusBadges vehicle={vehicle} />
-                  </div>
+                  <Badge tone={vehicle.operationalStatus.color}>{vehicle.operationalStatus.name}</Badge>
+                </td>
+                <td className="px-4 py-3">
+                  <Badge tone={vehicle.commercialStatus.color}>{vehicle.commercialStatus.name}</Badge>
                 </td>
                 <td className={cn("px-4 py-3 font-medium", `stock-${vehicle.ageLevel}`)}>{vehicle.daysInStock}</td>
                 <td className="px-4 py-3">{formatMoney(vehicle.salePrice)}</td>
@@ -148,19 +152,27 @@ export function VehicleFilters({
   models,
   versions,
 }: {
-  statuses: Array<{ id: string; name: string; filterSelectedByDefault?: boolean }>;
+  statuses: Array<{
+    id: string;
+    name: string;
+    category?: string;
+    filterSelectedByDefault?: boolean;
+  }>;
   locations: Array<{ id: string; name: string }>;
   sources: Array<{ id: string; name: string }>;
   makes: string[];
   models: string[];
   versions: string[];
 }) {
+  const operational = statuses.filter((item) => item.category === "operational");
+  const commercial = statuses.filter((item) => item.category === "commercial");
   return (
     <LiveFilterForm
-      className="grid gap-3 rounded-3xl border border-border bg-card p-4 md:grid-cols-4 lg:grid-cols-7"
+      className="grid gap-3 rounded-3xl border border-border bg-card p-4 md:grid-cols-4 lg:grid-cols-8"
       preserve={["inStock", "available", "sort"]}
       defaults={{
-        statusId: statuses.filter((item) => item.filterSelectedByDefault).map((item) => item.id).join(","),
+        operationalStatusId: operational.filter((item) => item.filterSelectedByDefault).map((item) => item.id).join(","),
+        commercialStatusId: commercial.filter((item) => item.filterSelectedByDefault).map((item) => item.id).join(","),
       }}
       fields={[
         { type: "search", name: "q", placeholder: "Marca, modelo, versão, matrícula", className: "h-10 rounded-lg border border-border px-3 text-sm md:col-span-2 lg:col-span-2" },
@@ -184,10 +196,17 @@ export function VehicleFilters({
         },
         {
           type: "multiselect",
-          name: "statusId",
-          emptyLabel: "Estado",
+          name: "operationalStatusId",
+          emptyLabel: "Operacional",
           emptyValue: STATUS_FILTER_NONE,
-          options: statuses.map((item) => ({ value: item.id, label: item.name })),
+          options: operational.map((item) => ({ value: item.id, label: item.name })),
+        },
+        {
+          type: "multiselect",
+          name: "commercialStatusId",
+          emptyLabel: "Comercial",
+          emptyValue: STATUS_FILTER_NONE,
+          options: commercial.map((item) => ({ value: item.id, label: item.name })),
         },
         {
           type: "select",

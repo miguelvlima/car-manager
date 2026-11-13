@@ -22,7 +22,7 @@ import {
 } from "@/server/validations/vehicle";
 import { loginSchema } from "@/server/validations/auth";
 import { createVehicle, deletePhoto, deleteVehicle, setPrimaryPhoto, updateVehicle } from "@/server/services/vehicle.service";
-import { cancelSale, markDelivered, registerSale, unmarkDelivered } from "@/server/services/sale.service";
+import { cancelSale, markDelivered, markReturned, registerSale, unmarkDelivered, unmarkReturned } from "@/server/services/sale.service";
 import {
   deleteLocation,
   deleteProcessSite,
@@ -184,6 +184,28 @@ export async function cancelSaleAction(input: unknown) {
     const actor = await requirePermission("vehicle:register_sale");
     const data = commercialRevertSchema.parse(input);
     await cancelSale(actor, data);
+    return { ok: true as const, data: true };
+  } catch (error) {
+    return toActionResult(error);
+  }
+}
+
+export async function markReturnedAction(input: unknown) {
+  try {
+    const actor = await requirePermission("vehicle:change_status");
+    const data = commercialRevertSchema.parse(input);
+    await markReturned(actor, data);
+    return { ok: true as const, data: true };
+  } catch (error) {
+    return toActionResult(error);
+  }
+}
+
+export async function unmarkReturnedAction(input: unknown) {
+  try {
+    const actor = await requirePermission("vehicle:change_status");
+    const data = commercialRevertSchema.parse(input);
+    await unmarkReturned(actor, data);
     return { ok: true as const, data: true };
   } catch (error) {
     return toActionResult(error);
