@@ -1,10 +1,3 @@
-export const COMMERCIAL_STATUS_CODES = [
-  "DISPONIVEL_PARA_VENDA",
-  "RESERVADO",
-  "VENDIDO",
-  "AGUARDA_ENTREGA",
-] as const;
-
 export const VEHICLE_LIST_SORTS = [
   "newest",
   "oldest",
@@ -28,10 +21,6 @@ export const VEHICLE_LIST_SORTS = [
 
 export type VehicleListSort = (typeof VEHICLE_LIST_SORTS)[number];
 
-export function isCommercialStatus(code: string) {
-  return (COMMERCIAL_STATUS_CODES as readonly string[]).includes(code);
-}
-
 export function isSalesRole(roleCode: string) {
   return roleCode === "SALES";
 }
@@ -39,7 +28,6 @@ export function isSalesRole(roleCode: string) {
 export function operationalStatuses<T extends { code: string; category?: string }>(statuses: T[], currentCode?: string) {
   return statuses.filter((status) => {
     if (currentCode && status.code === currentCode) return true;
-    if (status.category && status.category !== "operational") return false;
-    return !isCommercialStatus(status.code);
+    return !status.category || status.category === "operational";
   });
 }

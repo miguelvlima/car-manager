@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { put } from "@vercel/blob";
-import { assertSafeUpload, inferUploadType, storeLocalFile, type StoredFile } from "./local";
+import { assertSafeUpload, inferUploadType, sniffImageType, storeLocalFile, type StoredFile } from "./local";
 
 function extensionFor(contentType: string) {
   if (contentType === "image/png") return "png";
@@ -16,9 +16,11 @@ export async function storeUpload(file: File, folder: string): Promise<StoredFil
     Boolean(process.env.BLOB_STORE_ID);
   if (!useBlob) return storeLocalFile(file, folder);
 
-  assertSafeUpload(file);
-  const contentType = inferUploadType(file) ?? "image/jpeg";
-  const blob = await put(`${folder}/${randomUUID()}.${extensionFor(contentType)}`, file, {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const sniffed = sniffImageType(buffer);
+  assertSafeUpload(file, sniffed);
+  const contentType = sniffed ?? inferUploadType(file) ?? "image/jpeg";
+  const blob = await put(`${folder}/${randomUUID()}.${extensionFor(contentType)}`, buffer, {
     access: "public",
     contentType,
   });
@@ -27,6 +29,6 @@ export async function storeUpload(file: File, folder: string): Promise<StoredFil
     key: blob.pathname,
     url: blob.url,
     contentType,
-    sizeBytes: file.size,
+    sizeBytes: buffer.length,
   };
 }

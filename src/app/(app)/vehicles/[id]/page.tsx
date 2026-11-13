@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { isSalesRole } from "@/lib/vehicle-status";
 import { deleteVehicleAction } from "@/server/actions";
 import { can, requirePermission } from "@/server/permissions/check";
+import { listSaleSellers } from "@/server/services/sale.service";
 import { getVehicleById } from "@/server/services/vehicle.service";
 import { getPreparation } from "@/server/services/process.service";
 import PreparationPanel from "@/components/vehicles/preparation-panel";
@@ -21,9 +22,11 @@ export default async function VehicleDetailPage({
 }) {
   const actor = await requirePermission("vehicle:view");
   const { id } = await params;
-  const [{ vehicle, events, locationHistory, priceHistory }, preparation] = await Promise.all([
+  const canChangeSeller = can(actor, "vehicle:change_seller");
+  const [{ vehicle, events, locationHistory, priceHistory }, preparation, sellers] = await Promise.all([
     getVehicleById(actor, id),
     getPreparation(id),
+    canChangeSeller ? listSaleSellers() : Promise.resolve([]),
   ]);
   const sold = Boolean(vehicle.activeSale);
   const delivered = Boolean(vehicle.activeSale?.actualDeliveryAt);
@@ -72,8 +75,9 @@ export default async function VehicleDetailPage({
                 <SaleDialog
                   vehicleId={vehicle.id}
                   price={vehicle.salePrice}
-                  sellerName={actor.name}
-                  canChangeSeller={can(actor, "vehicle:change_seller")}
+                  currentUserId={actor.id}
+                  canChangeSeller={canChangeSeller}
+                  sellers={sellers}
                 />
               ) : null}
               {can(actor, "vehicle:mark_delivered") && sold && !delivered ? <DeliverDialog vehicleId={vehicle.id} /> : null}

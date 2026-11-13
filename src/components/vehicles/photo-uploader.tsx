@@ -6,23 +6,10 @@ import { useId, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { uploadVehiclePhotos } from "@/lib/photos/upload-vehicle-photos";
 import { deletePhotoAction, setPrimaryPhotoAction } from "@/server/actions";
 
-const GALLERY_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,image/*";
-
-async function uploadPhotos(vehicleId: string, files: File[]) {
-  if (!files.length) return 0;
-  for (const [index, file] of files.entries()) {
-    const body = new FormData();
-    body.append("file", file);
-    const response = await fetch(`/api/vehicles/${vehicleId}/photos`, { method: "POST", body });
-    if (!response.ok) {
-      const data = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(data?.error ?? `Não foi possível carregar a fotografia ${index + 1}.`);
-    }
-  }
-  return files.length;
-}
+const GALLERY_ACCEPT = "image/*,.heic,.heif,.avif,.bmp,.tif,.tiff,.dng,.gif";
 
 function FilePicker({
   label,
@@ -85,24 +72,31 @@ export default function PhotoEditor({
   const [busy, setBusy] = useState<"idle" | "upload" | "primary" | "delete">("idle");
   const [dragging, setDragging] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const pending = busy !== "idle";
   const confirming = photos.find((photo) => photo.id === confirmId);
 
   async function handleFiles(files: File[]) {
-    const images = files.filter((file) => file.type.startsWith("image/") || !file.type);
-    if (!images.length) {
-      toast.error("Escolha uma imagem (JPG, PNG, WEBP ou HEIC).");
-      return;
-    }
+    if (!files.length) return;
+    setError(null);
     setBusy("upload");
+    const toastId = toast.loading("A preparar as fotografias…");
     try {
-      const count = await uploadPhotos(vehicleId, images);
-      toast.success(count === 1 ? "Fotografia adicionada." : `${count} fotografias adicionadas.`);
+      const count = await uploadVehiclePhotos(vehicleId, files, (message) => {
+        setStatus(message);
+        toast.loading(message, { id: toastId });
+      });
+      toast.success(count === 1 ? "Fotografia adicionada." : `${count} fotografias adicionadas.`, { id: toastId });
+      setStatus(null);
       router.refresh();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível carregar a fotografia.");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Não foi possível carregar a fotografia.";
+      setError(message);
+      toast.error(message, { id: toastId, duration: 8000 });
     } finally {
       setBusy("idle");
+      setStatus(null);
     }
   }
 
@@ -141,9 +135,15 @@ export default function PhotoEditor({
       <div>
         <h2 className="text-lg font-semibold">Fotografias</h2>
         <p className="text-sm text-muted-foreground">
-          Pode carregar várias, escolher a principal e eliminar as que carregou por engano. A principal é a que fica visível no stock comercial.
+          Pode carregar várias, escolher a principal e eliminar as que carregou por engano. A principal é a que fica visível no stock comercial. Fotos grandes ou HEIC do iPhone são convertidas e comprimidas automaticamente.
         </p>
       </div>
+      {status ? <p className="text-sm text-muted-foreground">{status}</p> : null}
+      {error ? (
+        <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          {error}
+        </p>
+      ) : null}
       <div
         className={cn(
           "rounded-2xl border border-dashed border-border bg-muted/30 p-4 transition-colors",
@@ -187,7 +187,7 @@ export default function PhotoEditor({
             </FilePicker>
             <FilePicker
               label={busy === "upload" ? "A enviar..." : "Tirar foto"}
-              accept="image/*"
+              accept="image/*,.heic,.heif"
               capture="environment"
               disabled={pending}
               onFiles={handleFiles}

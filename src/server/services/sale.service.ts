@@ -5,6 +5,21 @@ import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 import { getStockSettings } from "@/server/services/settings.service";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
 
+export async function listSaleSellers() {
+  return prisma.user.findMany({
+    where: {
+      deletedAt: null,
+      isActive: true,
+      OR: [
+        { role: { code: "SUPER_ADMIN" } },
+        { role: { permissions: { some: { allowed: true, permission: { key: "vehicle:register_sale" } } } } },
+      ],
+    },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+}
+
 export async function registerSale(
   actor: Actor,
   input: {
@@ -19,7 +34,18 @@ export async function registerSale(
     throw new AppError("Não tem permissão para registar vendas.", "FORBIDDEN", 403);
   }
 
-  const sellerId = can(actor, "vehicle:change_seller") && input.sellerId ? input.sellerId : actor.id;
+  let sellerId = actor.id;
+  if (can(actor, "vehicle:change_seller")) {
+    if (!input.sellerId) {
+      throw new AppError("Selecione o vendedor da venda.", "VALIDATION");
+    }
+    const seller = await prisma.user.findFirst({
+      where: { id: input.sellerId, deletedAt: null, isActive: true },
+      select: { id: true },
+    });
+    if (!seller) throw new AppError("Vendedor inválido.", "VALIDATION");
+    sellerId = seller.id;
+  }
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
     include: { status: true, photos: true, location: true, source: true, sales: { include: { seller: { select: { id: true, name: true } } } } },

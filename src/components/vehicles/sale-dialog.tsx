@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Textarea } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { toDateInput } from "@/lib/format";
 import { formatMoney } from "@/lib/format";
 import type { ActionResult } from "@/lib/errors";
@@ -13,18 +13,20 @@ import { cancelSaleAction, markDeliveredAction, registerSaleAction, unmarkDelive
 export function SaleDialog({
   vehicleId,
   price,
-  sellerName,
+  currentUserId,
   canChangeSeller,
+  sellers = [],
 }: {
   vehicleId: string;
   price: number | null;
-  sellerName: string;
+  currentUserId: string;
   canChangeSeller: boolean;
+  sellers?: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const [draft, setDraft] = useState<{ soldAt: string; finalPrice: string; notes: string } | null>(null);
+  const [draft, setDraft] = useState<{ soldAt: string; finalPrice: string; notes: string; sellerId: string } | null>(null);
 
   function close() {
     setOpen(false);
@@ -39,6 +41,7 @@ export function SaleDialog({
         soldAt: String(formData.get("soldAt") ?? ""),
         finalPrice: String(formData.get("finalPrice") ?? ""),
         notes: String(formData.get("notes") ?? ""),
+        sellerId: String(formData.get("sellerId") ?? ""),
       });
       return;
     }
@@ -68,6 +71,12 @@ export function SaleDialog({
                   histórico.
                 </p>
                 <dl className="space-y-2 rounded-2xl bg-muted/50 p-4 text-sm">
+                  {canChangeSeller ? (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">Vendedor</dt>
+                      <dd className="font-medium">{sellers.find((seller) => seller.id === draft.sellerId)?.name ?? "—"}</dd>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between gap-4">
                     <dt className="text-muted-foreground">Preço final</dt>
                     <dd className="font-medium">{formatMoney(Number(draft.finalPrice) || null)}</dd>
@@ -91,7 +100,17 @@ export function SaleDialog({
                   {canChangeSeller ? (
                     <div>
                       <Label>Vendedor</Label>
-                      <Input defaultValue={sellerName} disabled />
+                      <Select name="sellerId" defaultValue="" required>
+                        <option value="" disabled>
+                          Selecionar vendedor
+                        </option>
+                        {sellers.map((seller) => (
+                          <option key={seller.id} value={seller.id}>
+                            {seller.name}
+                            {seller.id === currentUserId ? " (eu)" : ""}
+                          </option>
+                        ))}
+                      </Select>
                     </div>
                   ) : null}
                   <div className="sm:col-span-2">

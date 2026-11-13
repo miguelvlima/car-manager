@@ -67,7 +67,7 @@ export default async function StatusesSettingsPage({
                 </td>
                 <td className="px-4 py-3">{item._count.vehicles}</td>
                 <td className="px-4 py-3">
-                  <Badge tone={item.color}>{item.isActive ? "Ativo" : "Inativo"}</Badge>
+                  <Badge tone={item.isActive ? "green" : "red"}>{item.isActive ? "Ativo" : "Inativo"}</Badge>
                 </td>
                 <td className="px-4 py-3">
                   <RowActions

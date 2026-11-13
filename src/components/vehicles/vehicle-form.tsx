@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { toDateInput } from "@/lib/format";
+import { uploadVehiclePhotos } from "@/lib/photos/upload-vehicle-photos";
 import { operationalStatuses } from "@/lib/vehicle-status";
 import { createVehicleAction, updateVehicleAction } from "@/server/actions";
 import type { VehicleDTO } from "@/server/services/vehicle-mapper";
@@ -44,18 +45,17 @@ export function VehicleForm({
       return;
     }
     if (!vehicle && photos.length) {
+      const toastId = "create-photos";
       try {
-        for (const file of photos) {
-          const body = new FormData();
-          body.append("file", file);
-          const response = await fetch(`/api/vehicles/${result.data.id}/photos`, { method: "POST", body });
-          if (!response.ok) {
-            const data = (await response.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(data?.error ?? "Não foi possível carregar uma fotografia.");
-          }
-        }
+        await uploadVehiclePhotos(result.data.id, photos, (message) => toast.loading(message, { id: toastId }));
+        toast.dismiss(toastId);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "A viatura foi criada, mas as fotos falharam.");
+        toast.error(
+          error instanceof Error
+            ? `A viatura foi criada, mas as fotos falharam: ${error.message}`
+            : "A viatura foi criada, mas as fotos falharam. Abra a ficha e tente carregar outra vez.",
+          { id: toastId, duration: 8000 },
+        );
         router.push(`/vehicles/${result.data.id}/edit`);
         router.refresh();
         setPending(false);
@@ -157,7 +157,7 @@ export function VehicleForm({
           <p className="text-sm text-muted-foreground">Opcional. Pode carregar já as fotos da viatura.</p>
           <Input
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
+            accept="image/*,.heic,.heif,.avif,.bmp,.tif,.tiff,.dng,.gif"
             multiple
             onChange={(event) => {
               setPhotos(Array.from(event.target.files ?? []));
