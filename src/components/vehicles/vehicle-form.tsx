@@ -32,6 +32,7 @@ export function VehicleForm({
   const [pending, setPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
   const statuses = operationalStatuses(lookups.statuses, vehicle?.status.code);
+  const saleLocked = Boolean(vehicle?.activeSale);
 
   async function onSubmit(formData: FormData) {
     setPending(true);
@@ -106,13 +107,24 @@ export function VehicleForm({
         {vehicle ? (
           <div>
             <Label>Estado</Label>
-            <Select name="statusId" defaultValue={vehicle.status.id} required>
-              {statuses.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </Select>
+            {saleLocked ? (
+              <>
+                <Input value={vehicle.status.name} disabled />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {vehicle.activeSale?.actualDeliveryAt
+                    ? "Entregue não se altera aqui. Na ficha, use Anular entrega — a viatura volta a Vendido."
+                    : "Vendido não se altera aqui. Na ficha, use Anular venda. Depois de entregue, só com Anular entrega."}
+                </p>
+              </>
+            ) : (
+              <Select name="statusId" defaultValue={vehicle.status.id} required>
+                {statuses.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
         ) : (
           <div>

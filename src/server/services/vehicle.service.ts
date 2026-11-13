@@ -5,9 +5,10 @@ import { normalizePlate } from "@/lib/plate";
 import { can, type Actor } from "@/server/permissions/check";
 import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 import { getStockSettings } from "@/server/services/settings.service";
+import { ensureSaleCatalogStatusesSynced } from "@/server/services/sale.service";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
 import { sanitizeVehiclePatch, type VehicleWritableFields } from "@/server/services/vehicle-sanitize";
-import { isSalesRole, STATUS_FILTER_NONE, type VehicleListSort } from "@/lib/vehicle-status";
+import { isSaleOutcomeStatus, isSalesRole, STATUS_FILTER_NONE, type VehicleListSort } from "@/lib/vehicle-status";
 
 const vehicleInclude = {
   status: true,
@@ -101,6 +102,7 @@ function whereForCatalogStatus(status: { id: string; code: string }): Prisma.Veh
 }
 
 export async function listVehicles(actor: Actor, query: VehicleListQuery) {
+  await ensureSaleCatalogStatusesSynced();
   const settings = await getStockSettings();
   const page = Math.max(1, query.page ?? 1);
   const pageSize = Math.min(60, Math.max(1, query.pageSize ?? 24));
@@ -141,7 +143,14 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
       ? [{ mileage: { gte: query.minKm, lte: query.maxKm } }]
       : []),
     ...(hideDelivered
-      ? [{ NOT: { sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } } } }]
+      ? [
+          {
+            AND: [
+              { NOT: { sales: { some: { cancelledAt: null, actualDeliveryAt: { not: null } } } } },
+              { status: { code: { not: "ENTREGUE" } } },
+            ],
+          },
+        ]
       : []),
     ...(query.sellerId ? [{ sales: { some: { sellerId: query.sellerId, cancelledAt: null } } }] : []),
     ...(query.q
@@ -217,6 +226,7 @@ export async function listVehicles(actor: Actor, query: VehicleListQuery) {
 }
 
 export async function getVehicleById(actor: Actor, id: string) {
+  await ensureSaleCatalogStatusesSynced();
   const settings = await getStockSettings();
   const vehicle = await prisma.vehicle.findFirst({
     where: { id, deletedAt: null },
@@ -341,11 +351,24 @@ export async function updateVehicle(actor: Actor, id: string, input: VehicleWrit
   }
   const existing = await prisma.vehicle.findFirst({
     where: { id, deletedAt: null },
-    include: { status: true, location: true },
+    include: { status: true, location: true, sales: { where: { cancelledAt: null }, select: { id: true } } },
   });
   if (!existing) throw new AppError("Viatura não encontrada.", "NOT_FOUND", 404);
 
   const sanitized = sanitizeVehiclePatch(input, actor.roleCode, actor.permissions);
+  if (sanitized.statusId && sanitized.statusId !== existing.statusId) {
+    const nextStatus = await prisma.vehicleStatus.findUnique({ where: { id: sanitized.statusId } });
+    if (!nextStatus) throw new AppError("Estado inválido.", "VALIDATION");
+    if (isSaleOutcomeStatus(nextStatus.code)) {
+      throw new AppError("Vendido e Entregue só se definem na ficha, ao marcar a venda ou a entrega.", "CONFLICT");
+    }
+    if (existing.sales.length) {
+      throw new AppError(
+        "Enquanto a viatura estiver vendida ou entregue, o estado só muda na ficha, com Anular entrega ou Anular venda.",
+        "CONFLICT",
+      );
+    }
+  }
   const data: Prisma.VehicleUpdateInput = {};
   const assign = <K extends keyof VehicleWritableFields>(key: K, write: () => void) => {
     if (sanitized[key] !== undefined) write();

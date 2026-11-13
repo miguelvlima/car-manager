@@ -1,9 +1,71 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { can, type Actor } from "@/server/permissions/check";
 import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 import { getStockSettings } from "@/server/services/settings.service";
+import { SALE_OUTCOME_CODES } from "@/lib/vehicle-status";
 import { mapVehicle } from "@/server/services/vehicle-mapper";
+
+async function applyCatalogStatus(
+  db: Prisma.TransactionClient,
+  vehicle: { id: string; statusId: string; status: { name: string } },
+  code: string,
+  actor: Actor,
+) {
+  const status = await db.vehicleStatus.findUnique({ where: { code } });
+  if (!status) {
+    throw new AppError(`O estado «${code}» não existe. Crie-o em Configurações → Estados.`, "NOT_FOUND", 404);
+  }
+  if (status.id === vehicle.statusId) return null;
+  const fromName = vehicle.status.name;
+  await db.vehicle.update({ where: { id: vehicle.id }, data: { statusId: status.id } });
+  await db.vehicleStatusHistory.create({
+    data: {
+      vehicleId: vehicle.id,
+      fromStatusId: vehicle.statusId,
+      toStatusId: status.id,
+      changedById: actor.id,
+    },
+  });
+  vehicle.statusId = status.id;
+  vehicle.status = { name: status.name };
+  return { fromName, toName: status.name };
+}
+
+async function logStatusChange(
+  vehicleId: string,
+  actor: Actor,
+  change: { fromName: string; toName: string } | null,
+) {
+  if (!change) return;
+  await writeVehicleEvent({
+    vehicleId,
+    type: "STATUS_CHANGED",
+    title: `Estado: ${change.fromName} → ${change.toName}`,
+    actor,
+    previous: { status: change.fromName },
+    next: { status: change.toName },
+  });
+}
+
+async function restoreStatusAfterSale(db: Prisma.TransactionClient, vehicleId: string, actor: Actor) {
+  const vehicle = await db.vehicle.findFirstOrThrow({
+    where: { id: vehicleId },
+    include: { status: true },
+  });
+  const history = await db.vehicleStatusHistory.findMany({
+    where: { vehicleId },
+    orderBy: { changedAt: "desc" },
+    take: 20,
+    include: { fromStatus: true },
+  });
+  const previous = history.find(
+    (row) => row.fromStatus && !SALE_OUTCOME_CODES.has(row.fromStatus.code),
+  )?.fromStatus;
+  const code = previous?.code ?? "DISPONIVEL_PARA_VENDA";
+  return applyCatalogStatus(db, vehicle, code, actor);
+}
 
 export async function listSaleSellers() {
   return prisma.user.findMany({
@@ -55,7 +117,7 @@ export async function registerSale(
     throw new AppError("Esta viatura já está marcada como vendida.", "CONFLICT");
   }
 
-  const sale = await prisma.$transaction(async (tx) => {
+  const { sale, statusChange } = await prisma.$transaction(async (tx) => {
     const created = await tx.vehicleSale.create({
       data: {
         vehicleId: vehicle.id,
@@ -71,9 +133,11 @@ export async function registerSale(
       where: { id: vehicle.id },
       data: { salePrice: input.finalPrice },
     });
+    const change = await applyCatalogStatus(tx, vehicle, "VENDIDO", actor);
 
-    return created;
+    return { sale: created, statusChange: change };
   });
+  await logStatusChange(vehicle.id, actor, statusChange);
 
   await writeVehicleEvent({
     vehicleId: vehicle.id,
@@ -112,6 +176,7 @@ export async function markDelivered(actor: Actor, input: { vehicleId: string; ac
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
     include: {
+      status: true,
       sales: { where: { cancelledAt: null }, orderBy: { soldAt: "desc" }, take: 1, include: { seller: { select: { id: true, name: true } } } },
     },
   });
@@ -125,10 +190,14 @@ export async function markDelivered(actor: Actor, input: { vehicleId: string; ac
 
   const notes = input.notes?.trim() || null;
 
-  await prisma.vehicleSale.update({
-    where: { id: sale.id },
-    data: { actualDeliveryAt: deliveredAt, deliveryNotes: notes },
+  const statusChange = await prisma.$transaction(async (tx) => {
+    await tx.vehicleSale.update({
+      where: { id: sale.id },
+      data: { actualDeliveryAt: deliveredAt, deliveryNotes: notes },
+    });
+    return applyCatalogStatus(tx, vehicle, "ENTREGUE", actor);
   });
+  await logStatusChange(vehicle.id, actor, statusChange);
 
   await writeVehicleEvent({
     vehicleId: vehicle.id,
@@ -154,6 +223,7 @@ export async function unmarkDelivered(actor: Actor, input: { vehicleId: string; 
   const vehicle = await prisma.vehicle.findFirst({
     where: { id: input.vehicleId, deletedAt: null },
     include: {
+      status: true,
       sales: { where: { cancelledAt: null }, orderBy: { soldAt: "desc" }, take: 1, include: { seller: { select: { id: true, name: true } } } },
     },
   });
@@ -161,10 +231,14 @@ export async function unmarkDelivered(actor: Actor, input: { vehicleId: string; 
   const sale = vehicle.sales[0];
   if (!sale?.actualDeliveryAt) throw new AppError("Esta viatura não tem uma entrega para anular.", "CONFLICT");
 
-  await prisma.vehicleSale.update({
-    where: { id: sale.id },
-    data: { actualDeliveryAt: null, deliveryNotes: null },
+  const statusChange = await prisma.$transaction(async (tx) => {
+    await tx.vehicleSale.update({
+      where: { id: sale.id },
+      data: { actualDeliveryAt: null, deliveryNotes: null },
+    });
+    return applyCatalogStatus(tx, vehicle, "VENDIDO", actor);
   });
+  await logStatusChange(vehicle.id, actor, statusChange);
 
   await writeVehicleEvent({
     vehicleId: vehicle.id,
@@ -214,10 +288,14 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
     );
   }
 
-  await prisma.vehicleSale.update({
-    where: { id: sale.id },
-    data: { cancelledAt: new Date(), cancelledReason: input.reason },
+  const statusChange = await prisma.$transaction(async (tx) => {
+    await tx.vehicleSale.update({
+      where: { id: sale.id },
+      data: { cancelledAt: new Date(), cancelledReason: input.reason },
+    });
+    return restoreStatusAfterSale(tx, vehicle.id, actor);
   });
+  await logStatusChange(vehicle.id, actor, statusChange);
 
   await writeVehicleEvent({
     vehicleId: vehicle.id,
@@ -240,4 +318,63 @@ export async function cancelSale(actor: Actor, input: { vehicleId: string; reaso
     previous: { saleId: sale.id, sellerId: sale.sellerId, finalPrice: Number(sale.finalPrice) },
     next: { reason: input.reason },
   });
+}
+
+async function findOutcomeStatus(code: string, name: string) {
+  const byCode = await prisma.vehicleStatus.findUnique({ where: { code } });
+  if (byCode) return byCode;
+  return prisma.vehicleStatus.findFirst({
+    where: { name: { equals: name, mode: "insensitive" } },
+  });
+}
+
+async function applyOutcomeToMismatchedSales(
+  status: { id: string },
+  delivery: "delivered" | "sold",
+) {
+  const vehicles = await prisma.vehicle.findMany({
+    where: {
+      deletedAt: null,
+      statusId: { not: status.id },
+      sales: {
+        some: {
+          cancelledAt: null,
+          actualDeliveryAt: delivery === "delivered" ? { not: null } : null,
+        },
+      },
+    },
+    select: { id: true, statusId: true },
+  });
+  if (!vehicles.length) return;
+  await prisma.$transaction([
+    prisma.vehicleStatusHistory.createMany({
+      data: vehicles.map((vehicle) => ({
+        vehicleId: vehicle.id,
+        fromStatusId: vehicle.statusId,
+        toStatusId: status.id,
+        notes: delivery === "delivered" ? "Sincronização: viatura entregue" : "Sincronização: viatura vendida",
+      })),
+    }),
+    prisma.vehicle.updateMany({
+      where: { id: { in: vehicles.map((vehicle) => vehicle.id) } },
+      data: { statusId: status.id },
+    }),
+  ]);
+}
+
+async function syncSaleCatalogStatuses() {
+  const entregue = await findOutcomeStatus("ENTREGUE", "Entregue");
+  const vendido = await findOutcomeStatus("VENDIDO", "Vendido");
+  if (entregue) await applyOutcomeToMismatchedSales(entregue, "delivered");
+  if (vendido) await applyOutcomeToMismatchedSales(vendido, "sold");
+}
+
+let saleStatusSync: Promise<void> | null = null;
+
+export async function ensureSaleCatalogStatusesSynced() {
+  saleStatusSync ??= syncSaleCatalogStatuses().catch((error) => {
+    saleStatusSync = null;
+    console.error("Failed to sync sale catalog statuses", error);
+  });
+  await saleStatusSync;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { STATUS_FILTER_NONE } from "@/lib/vehicle-status";
 
 type FilterField =
@@ -23,6 +23,8 @@ type FilterField =
       className?: string;
     };
 
+const MULTISELECT_DEBOUNCE_MS = 120;
+
 export function LiveFilterForm({
   className,
   fields,
@@ -37,22 +39,34 @@ export function LiveFilterForm({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queued = useRef<Record<string, string>>({});
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
 
-  function current() {
+  function snapshot() {
     const values: Record<string, string> = { ...defaults };
+    const params = searchParamsRef.current;
     for (const key of preserve) {
-      const value = searchParams.get(key);
+      const value = params.get(key);
       if (value) values[key] = value;
     }
     for (const field of fields) {
-      const value = searchParams.get(field.name);
+      const value = params.get(field.name);
       if (value) values[field.name] = value;
     }
     return values;
   }
 
-  function push(patch: Record<string, string>) {
-    const next = { ...current(), ...patch };
+  function flush() {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    const patch = queued.current;
+    queued.current = {};
+    const next = { ...snapshot(), ...patch };
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(next)) {
       if (value) params.set(key, value);
@@ -60,10 +74,29 @@ export function LiveFilterForm({
     params.delete("page");
     const query = params.toString();
     const href = query ? `${pathname}?${query}` : pathname;
-    const now = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    const now = `${pathname}${searchParamsRef.current.toString() ? `?${searchParamsRef.current.toString()}` : ""}`;
     if (href === now) return;
-    router.replace(href, { scroll: false });
+    startTransition(() => {
+      router.replace(href, { scroll: false });
+    });
   }
+
+  function push(patch: Record<string, string>, debounceMs = 0) {
+    queued.current = { ...queued.current, ...patch };
+    if (timer.current) clearTimeout(timer.current);
+    if (debounceMs <= 0) {
+      flush();
+      return;
+    }
+    timer.current = setTimeout(flush, debounceMs);
+  }
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   function fieldValue(name: string) {
     return searchParams.get(name) ?? defaults[name] ?? "";
@@ -104,7 +137,10 @@ export function LiveFilterForm({
               options={field.options}
               value={fieldValue(field.name)}
               className={field.className}
-              onCommit={(value) => push({ [field.name]: value })}
+              onCommit={(value, immediate) =>
+                push({ [field.name]: value }, immediate ? 0 : MULTISELECT_DEBOUNCE_MS)
+              }
+              onClose={flush}
             />
           );
         }
@@ -140,18 +176,27 @@ function MultiSelect({
   value,
   className,
   onCommit,
+  onClose,
 }: {
   emptyLabel: string;
   emptyValue?: string;
   options: Array<{ value: string; label: string }>;
   value: string;
   className?: string;
-  onCommit: (value: string) => void;
+  onCommit: (value: string, immediate?: boolean) => void;
+  onClose: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(() => parseCsv(value));
   const root = useRef<HTMLDivElement>(null);
-  const selected = parseCsv(value);
+  const onCloseRef = useRef(onClose);
+  const wasOpen = useRef(false);
   const selectedSet = new Set(selected);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) setSelected(parseCsv(value));
+  }, [value, open]);
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {
@@ -161,12 +206,18 @@ function MultiSelect({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, []);
 
-  function commit(next: string[]) {
-    onCommit(next.length ? next.join(",") : (emptyValue ?? ""));
+  useEffect(() => {
+    if (wasOpen.current && !open) onCloseRef.current();
+    wasOpen.current = open;
+  }, [open]);
+
+  function apply(next: string[], immediate = false) {
+    setSelected(next);
+    onCommit(next.length ? next.join(",") : (emptyValue ?? ""), immediate);
   }
 
   function toggle(id: string) {
-    commit(selectedSet.has(id) ? selected.filter((item) => item !== id) : [...selected, id]);
+    apply(selectedSet.has(id) ? selected.filter((item) => item !== id) : [...selected, id]);
   }
 
   return (
@@ -190,14 +241,14 @@ function MultiSelect({
             <button
               type="button"
               className="rounded-lg px-2 py-1.5 text-xs font-medium hover:bg-muted"
-              onClick={() => commit(options.map((option) => option.value))}
+              onClick={() => apply(options.map((option) => option.value), true)}
             >
               Escolher todos
             </button>
             <button
               type="button"
               className="rounded-lg px-2 py-1.5 text-xs font-medium hover:bg-muted"
-              onClick={() => commit([])}
+              onClick={() => apply([], true)}
             >
               Remover todos
             </button>

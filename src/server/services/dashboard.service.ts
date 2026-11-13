@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { toNumber } from "@/lib/utils";
+import { ensureSaleCatalogStatusesSynced } from "@/server/services/sale.service";
 
 export function monthBounds(yearMonth?: string) {
   const now = new Date();
@@ -19,6 +20,7 @@ export async function getSalesReport({
   sellerId?: string;
 }) {
   const period = monthBounds(yearMonth);
+  await ensureSaleCatalogStatusesSynced();
   const sales = await prisma.vehicleSale.findMany({
     where: {
       cancelledAt: null,
@@ -34,6 +36,7 @@ export async function getSalesReport({
           model: true,
           version: true,
           licensePlate: true,
+          status: { select: { name: true, color: true } },
         },
       },
     },

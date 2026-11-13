@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { LiveFilterForm } from "@/components/shared/live-filters";
+import { VehicleStatusBadges } from "@/components/vehicles/status-badges";
 import { formatDate, formatMoney } from "@/lib/format";
 import { formatPlate } from "@/lib/plate";
 import { DeliverDialog, RevertAvailabilityButton, RevertDeliveryButton } from "@/components/vehicles/sale-dialog";
@@ -110,7 +110,7 @@ export default async function SalesPage({
                   <td className="px-4 py-3">{item.seller.name}</td>
                   <td className="px-4 py-3">{formatMoney(item.finalPrice)}</td>
                   <td className="px-4 py-3">
-                    {delivered ? <Badge tone="slate">Entregue</Badge> : <Badge tone="blue">Vendida</Badge>}
+                    <VehicleStatusBadges vehicle={item.vehicle} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">

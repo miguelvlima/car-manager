@@ -4,7 +4,7 @@ import { AppError } from "@/lib/errors";
 import { can, type Actor } from "@/server/permissions/check";
 import { writeAudit, writeVehicleEvent } from "@/server/services/audit.service";
 
-const BLOCKED_STATUS = new Set(["ENTREGUE", "CEDIDO", "DEVOLVIDO"]);
+const BLOCKED_STATUS = new Set(["VENDIDO", "ENTREGUE", "CEDIDO", "DEVOLVIDO"]);
 const ACTIVE_REFURB = new Set(["TO_START", "DELIVERED", "IN_PROGRESS"]);
 const ACTIVE_CLEAN = new Set(["PENDING", "IN_PROGRESS"]);
 
